@@ -1,0 +1,282 @@
+// Agent Signals analysis functions. Applied idempotently by the API at startup, after the typed
+// tables (defined in Kusto/SignalTables.cs) are created. Commands are separated by "//--" lines.
+// Formulas and thresholds follow SIGNAL.md and closing-the-loop.md (schema 0.1.x):
+// https://github.com/jennyf19/agentic-devops/tree/main/agent-signals
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Execution signals in the window, one row per signal.")
+SignalExecutions(window: timespan) {
+    Executions
+    | where effective_time > ago(window)
+    | summarize arg_max(received_at, *) by signal_id
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Outcome signals in the window, one row per signal.")
+SignalOutcomes(window: timespan) {
+    Outcomes
+    | where effective_time > ago(window)
+    | summarize arg_max(received_at, *) by signal_id
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Human feedback in the window, one rating per run and scope (ALAS sent the same answer twice).")
+SignalHumanFeedback(window: timespan) {
+    HumanFeedback
+    | where effective_time > ago(window)
+    | summarize arg_max(received_at, *) by run_id, scope
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Latest execution and latest outcome per run, paired by run_id.")
+SignalPairedRuns(window: timespan) {
+    let executions = SignalExecutions(window)
+        | summarize arg_max(effective_time, agent_name, skill_used, observed_model, confidence, continuation_readiness) by run_id;
+    let outcomes = SignalOutcomes(window)
+        | summarize arg_max(effective_time, quality_rating, recovery_rating, provenance_loss, authority_loss, stale_path_revived) by run_id
+        | project run_id, quality_rating, recovery_rating, provenance_loss, authority_loss, stale_path_revived;
+    executions
+    | lookup kind=inner outcomes on run_id
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Trust equation per agent and skill: calibration = 5 - |confidence - quality_rating|.")
+SignalCalibration(window: timespan) {
+    SignalPairedRuns(window)
+    | extend delta = confidence - quality_rating
+    | extend calibration = 5 - abs(delta)
+    | summarize
+        paired_runs = count(),
+        mean_calibration = round(avg(calibration), 2),
+        mean_confidence = round(avg(confidence), 2),
+        mean_quality_rating = round(avg(quality_rating), 2),
+        mean_delta = round(avg(delta), 2),
+        confidence_spread = round(stdev(confidence), 2),
+        overclaimed_runs = countif(delta > 0),
+        underclaimed_runs = countif(delta < 0)
+        by agent_name, skill_used
+    | extend note = case(
+        paired_runs < 5, "Fewer than 5 paired runs: too little evidence to judge calibration.",
+        confidence_spread < 0.5 and mean_calibration >= 4, "Confidence barely varies: good calibration may come from hedging (SIGNAL.md known limitation).",
+        "")
+    | order by mean_calibration asc, paired_runs desc
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Trust equation per observed model, to see whether a model change moves calibration.")
+SignalModelCalibration(window: timespan) {
+    SignalPairedRuns(window)
+    | extend observed_model = iff(isempty(observed_model), "(not reported)", observed_model)
+    | extend delta = confidence - quality_rating
+    | summarize
+        paired_runs = count(),
+        mean_calibration = round(avg(5 - abs(delta)), 2),
+        mean_confidence = round(avg(confidence), 2),
+        mean_quality_rating = round(avg(quality_rating), 2),
+        mean_delta = round(avg(delta), 2)
+        by observed_model
+    | order by paired_runs desc
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Continuation gap per agent and skill: readiness claimed by the predecessor versus recovery rated afterwards.")
+SignalContinuationGap(window: timespan) {
+    let ready = SignalExecutions(window)
+        | where isnotnull(continuation_readiness)
+        | summarize arg_max(effective_time, agent_name, skill_used, continuation_readiness) by run_id;
+    let recovered = SignalOutcomes(window)
+        | where isnotnull(recovery_rating)
+        | summarize arg_max(effective_time, recovery_rating, provenance_loss, authority_loss, stale_path_revived) by run_id
+        | project run_id, recovery_rating, provenance_loss, authority_loss, stale_path_revived;
+    ready
+    | lookup kind=leftouter recovered on run_id
+    | extend delta = continuation_readiness - recovery_rating
+    | summarize
+        handoffs = count(),
+        verified_handoffs = countif(isnotnull(recovery_rating)),
+        mean_readiness = round(avg(continuation_readiness), 2),
+        mean_recovery_rating = round(avg(recovery_rating), 2),
+        mean_gap = round(avg(abs(delta)), 2),
+        mean_delta = round(avg(delta), 2),
+        overclaimed_handoffs = countif(delta > 0),
+        material_provenance_loss = countif(provenance_loss == "material"),
+        material_authority_loss = countif(authority_loss == "material"),
+        stale_path_revived = countif(stale_path_revived == true)
+        by agent_name, skill_used
+    | extend unverified_handoffs = handoffs - verified_handoffs
+    | order by mean_delta desc
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Skill-health rules from closing-the-loop.md section 2.2: one row per skill with findings and severity.")
+SignalSkillHealth(window: timespan) {
+    let runs_in = (from_: datetime, to_: datetime) {
+        union
+            (Executions | project effective_time, run_id, skill_used, signal_kind = "execution"),
+            (Outcomes | project effective_time, run_id, skill_used, signal_kind = "outcome"),
+            (Escalations | project effective_time, run_id, skill_used, signal_kind = "escalation")
+        | where effective_time > from_ and effective_time <= to_ and isnotempty(skill_used)
+    };
+    let activity = runs_in(ago(window), now())
+        | summarize runs = dcount(run_id), escalated_runs = dcountif(run_id, signal_kind == "escalation") by skill_used;
+    let earlier_runs = runs_in(ago(2 * window), ago(window))
+        | summarize previous_runs = dcount(run_id) by skill_used;
+    let confidence = SignalExecutions(window)
+        | where isnotempty(skill_used)
+        | summarize low_confidence_runs = dcountif(run_id, confidence <= 3), mean_confidence = avg(confidence) by skill_used;
+    let earlier_confidence = Executions
+        | where effective_time between (ago(2 * window) .. ago(window)) and isnotempty(skill_used)
+        | summarize arg_max(received_at, *) by signal_id
+        | summarize previous_mean_confidence = avg(confidence) by skill_used;
+    let paired = SignalPairedRuns(window)
+        | where isnotempty(skill_used)
+        | summarize paired_runs = count(), paired_mean_confidence = avg(confidence), paired_mean_quality = avg(quality_rating) by skill_used;
+    activity
+    | lookup kind=leftouter earlier_runs on skill_used
+    | lookup kind=leftouter confidence on skill_used
+    | lookup kind=leftouter earlier_confidence on skill_used
+    | lookup kind=leftouter paired on skill_used
+    | extend
+        escalation_rate = round(todouble(escalated_runs) / runs, 2),
+        confidence_change = round(mean_confidence - previous_mean_confidence, 2),
+        overconfidence = round(paired_mean_confidence - paired_mean_quality, 2)
+    | extend candidates = pack_array(
+        iff(runs >= 5 and low_confidence_runs >= 5,
+            bag_pack("severity", "CRITICAL", "rule", "low_confidence", "evidence", strcat(low_confidence_runs, " of ", runs, " runs reported confidence 3 or lower")),
+            dynamic(null)),
+        iff(runs >= 5 and escalation_rate > 0.5,
+            bag_pack("severity", "CRITICAL", "rule", "escalation_rate", "evidence", strcat(escalated_runs, " of ", runs, " runs escalated")),
+            dynamic(null)),
+        iff(runs >= 5 and previous_runs >= 5 and confidence_change < -1.0,
+            bag_pack("severity", "HIGH", "rule", "confidence_decline", "evidence", strcat("mean confidence fell by ", -confidence_change, " versus the previous window")),
+            dynamic(null)),
+        iff(paired_runs >= 5 and overconfidence > 1.0,
+            bag_pack("severity", "HIGH", "rule", "overconfidence", "evidence", strcat("mean confidence exceeds mean quality_rating by ", overconfidence, " across ", paired_runs, " paired runs")),
+            dynamic(null)))
+    | mv-apply finding = candidates on (where isnotnull(finding) | summarize findings = make_list(finding))
+    | extend severity = case(tostring(findings) has "CRITICAL", "CRITICAL", tostring(findings) has "HIGH", "HIGH", "OK")
+    | extend rank_ = case(severity == "CRITICAL", 0, severity == "HIGH", 1, 2)
+    | order by rank_ asc, runs desc
+    | project skill_used, severity, findings, runs, escalation_rate, low_confidence_runs,
+        mean_confidence = round(mean_confidence, 2), previous_mean_confidence = round(previous_mean_confidence, 2),
+        confidence_change, paired_runs, overconfidence
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Execution pattern values, one per run, dimension and skill. Input for semantic clustering by a synthesizer agent.")
+SignalPatternEvidence(window: timespan) {
+    SignalExecutions(window)
+    | project effective_time, run_id, skill_used, agent_name,
+        p = bag_pack(
+            "what_worked", what_worked, "what_was_hard", what_was_hard, "skill_gap", skill_gap,
+            "tsg_gap", tsg_gap, "improvisation", improvisation, "recurring_pattern", recurring_pattern,
+            "environment_blockers", environment_blockers)
+    | mv-expand p
+    | extend dimension = tostring(bag_keys(p)[0])
+    | extend value = trim(@"\s+", tostring(p[dimension]))
+    | where isnotempty(value)
+    | summarize arg_max(effective_time, value, agent_name) by dimension, skill_used, run_id
+    | project effective_time, dimension, skill_used, agent_name, run_id, value
+    | order by effective_time desc
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Threshold check from closing-the-loop.md sections 2.2-2.4 on exactly matching (normalized) pattern values. A lower bound: semantic clustering is left to a synthesizer agent.")
+SignalPatternCandidates(window: timespan) {
+    let thresholds = datatable(dimension: string, threshold: int) [
+        "tsg_gap", 3,
+        "skill_gap", 3,
+        "what_was_hard", 5,
+        "improvisation", 3,
+        "recurring_pattern", 2,
+        "environment_blockers", 3
+    ];
+    SignalPatternEvidence(window)
+    | lookup kind=inner thresholds on dimension
+    | extend normalized = trim(@"[\s\.!;,]+", tolower(value))
+    | where isnotempty(normalized) and normalized !in ("none", "n/a", "na")
+    | summarize runs = dcount(run_id), last_seen = max(effective_time), example = take_any(value), run_ids = make_set(run_id, 50)
+        by dimension, threshold, normalized, skill_used
+    | summarize
+        max_runs_per_skill = max(runs),
+        skill_count = dcountif(skill_used, isnotempty(skill_used)),
+        skills = make_set_if(skill_used, isnotempty(skill_used), 20),
+        example = take_any(example),
+        run_ids = make_set(run_ids, 50),
+        last_seen = max(last_seen)
+        by dimension, threshold, normalized
+    | extend status = case(
+        max_runs_per_skill >= threshold or skill_count >= 3, "actionable",
+        max_runs_per_skill == threshold - 1, "monitoring",
+        "below_threshold")
+    | extend severity = case(
+        status == "actionable" and skill_count >= 3, "HIGH",
+        status == "actionable", "MEDIUM",
+        status == "monitoring", "LOW",
+        "")
+    | extend rank_ = case(severity == "HIGH", 0, severity == "MEDIUM", 1, severity == "LOW", 2, 3)
+    | order by rank_ asc, max_runs_per_skill desc, last_seen desc
+    | project dimension, severity, status, example, max_runs_per_skill, threshold, skill_count, skills, last_seen, run_ids
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Escalation signals in the window, newest first.")
+SignalEscalations(window: timespan) {
+    Escalations
+    | where effective_time > ago(window)
+    | summarize arg_max(received_at, *) by signal_id
+    | project effective_time, run_id, agent_name, skill_used, severity, reason, blocking, requested_action
+    | order by effective_time desc
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Recommendations from partnership signals, outcome-validated evidence first (SIGNAL.md, Consuming Signals).")
+SignalRecommendations(window: timespan) {
+    Partnerships
+    | where effective_time > ago(window)
+    | summarize arg_max(received_at, *) by signal_id
+    | mv-expand recommendation = recommendations
+    | where isnotnull(recommendation)
+    | extend target = tostring(recommendation.target)
+    | project effective_time, run_id,
+        reviewer = agent_name,
+        observed_agent,
+        skill_used = iff(isnotempty(target), target, iff(isnotempty(observed_skill), observed_skill, skill_used)),
+        recommendation_type = tostring(recommendation.type),
+        description = tostring(recommendation.description),
+        evidence = tostring(recommendation.evidence),
+        priority = tostring(recommendation.priority),
+        validation_status = iff(isempty(tostring(recommendation.validation_status)), "unspecified", tostring(recommendation.validation_status))
+    | extend
+        validation_rank = iff(validation_status == "outcome_validated", 0, 1),
+        priority_rank = case(priority == "critical", 0, priority == "high", 1, priority == "medium", 2, priority == "low", 3, 4)
+    | order by validation_rank asc, priority_rank asc, effective_time desc
+    | project-away validation_rank, priority_rank
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Human ratings per agent and skill, next to the agent's own confidence for the same runs. Optional data: autonomous runs have none.")
+SignalHumanFeedbackSummary(window: timespan) {
+    let confidence = SignalExecutions(window)
+        | summarize arg_max(effective_time, confidence) by run_id
+        | project run_id, confidence;
+    SignalHumanFeedback(window)
+    | lookup kind=leftouter confidence on run_id
+    | summarize
+        runs_asked = dcountif(run_id, asked == true or isnotnull(rating)),
+        runs_rated = dcountif(run_id, isnotnull(rating)),
+        mean_rating = round(avg(rating), 2),
+        mean_agent_confidence_on_rated_runs = round(avgif(confidence, isnotnull(rating)), 2)
+        by agent_name, skill_used, scope
+    | order by runs_rated desc
+}
+//--
+.create-or-alter function with (folder = "AgentSignals", docstring = "Counts for the window, including executions that no outcome has verified yet.")
+SignalOverview(window: timespan) {
+    let raw = SignalsRaw | where received_at > ago(window) | summarize arg_max(received_at, *) by signal_id;
+    let executed = toscalar(SignalExecutions(window) | summarize dcount(run_id));
+    let verified = toscalar(SignalPairedRuns(window) | count);
+    raw
+    | summarize
+        signals = count(),
+        conforming_signals = countif(conforming),
+        translated_from_alas = countif(source_format == "alas/1.0"),
+        runs = dcount(run_id),
+        agents = dcount(agent_name),
+        skills = dcountif(skill_used, isnotempty(skill_used)),
+        executions = countif(signal_type == "execution"),
+        outcomes = countif(signal_type == "outcome"),
+        escalations = countif(signal_type == "escalation"),
+        partnerships = countif(signal_type == "partnership"),
+        other_types = countif(signal_type !in ("execution", "outcome", "escalation", "partnership")),
+        earliest_received = min(received_at),
+        latest_received = max(received_at)
+    | extend executions_with_outcome = verified, executions_without_outcome = executed - verified
+}

@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+.vscode/*
+!.vscode/extensions.json
+*.user
+TestResults/
+.signals/
+.aspire/
+aspire-output/
+infra/
+*.pfx
+.env

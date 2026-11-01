@@ -1,0 +1,8 @@
+This project implements the Agent Signals protocol and includes its example signals.
+
+Agent Signals protocol (SIGNAL.md, closing-the-loop.md, examples)
+https://github.com/jennyf19/agentic-devops/tree/main/agent-signals
+Author: jennyf19
+License: MIT
+Copied files: samples/signals/execution.json, samples/signals/outcome.json,
+tests/AgentSignals.Tests/Fixtures/spec/*.json (from agent-signals/examples, commit e3b58eb).
