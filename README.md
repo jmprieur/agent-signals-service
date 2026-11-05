@@ -29,7 +29,7 @@ This is a working prototype, not a hosted product.
 | Receiving, checking, archiving and loading signals | Built; covered by 88 automated tests that use in-memory stand-ins for storage and Kusto |
 | Analysis queries (KQL) | Checked for syntax, unknown columns and type errors with Microsoft's Kusto language analyzer; **not yet run against a Kusto engine** |
 | ALAS conversion | Run over 5,392 real ALAS signals: 96.8% of executions and 98.8% of outcomes conform afterwards ([details](docs/alas-translation.md#results-on-real-alas-signals)) |
-| Azure deployment | Deployment templates generate correctly; **not yet deployed**, and the full app has not been run locally with the emulators |
+| Azure deployment | Deployment templates generate correctly; **not yet deployed**, and the full app has not been run locally against working emulators or real resources |
 | MCP tools | Built; **not yet exercised by an MCP client** |
 
 It builds on preview packages: Aspire 17 daily builds, including Aspire's new Entra ID integration.
@@ -84,12 +84,16 @@ are available as MCP tools.
 ## Run it locally
 
 You need the .NET 10 SDK, the [Aspire CLI](https://aspire.dev) (version 17 preview, matching the
-packages), and a container runtime such as Docker Desktop. Storage and Kusto run as local emulators;
-no Azure account is needed.
+packages), and a container runtime such as Docker Desktop or Podman. Storage and Kusto run as local
+emulators; no Azure account is needed.
 
 ```bash
 aspire run --apphost src/AgentSignals.AppHost
 ```
+
+**No container runtime, or an ARM64 machine?** The Kusto emulator is published for x64 only. You
+can point the local run at a real Kusto database instead, such as Azure Data Explorer's free
+cluster, and at a real storage account if needed. See [Running locally](docs/local-development.md).
 
 Locally the API accepts calls from your machine without a token. Send the protocol's example signal:
 

@@ -1,39 +1,61 @@
 using Aspire.Hosting.Azure;
 using Azure.Provisioning.Kusto;
 using Azure.Provisioning.Storage;
+using Microsoft.Extensions.Configuration;
 
 // Every Azure resource the service needs is declared here. `aspire run` uses local emulators;
 // `aspire deploy` creates the same resources in your own subscription.
 var builder = DistributedApplication.CreateBuilder(args);
 
+var api = builder.AddDotnetProject("api", "../AgentSignals.Api/AgentSignals.Api.csproj")
+    .WithHttpHealthCheck("/health");
+
+// Local runs can use an existing resource instead of an emulator by setting its connection string
+// (ConnectionStrings:signals, ConnectionStrings:signalsdb) in the AppHost's user secrets. This is how to
+// run on machines that cannot run the emulator containers, for example Windows on ARM64: the Kusto
+// emulator image is x64-only. See docs/local-development.md. Deployment always creates its own resources.
+bool UseExisting(string name) =>
+    !builder.ExecutionContext.IsPublishMode && !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString(name));
+
 // Durable archive: one immutable JSON file per accepted signal.
-var storage = builder.AddAzureStorage("storage").RunAsEmulator();
-var signalsContainer = storage.AddBlobContainer("signals");
+if (UseExisting("signals"))
+{
+    api.WithReference(builder.AddConnectionString("signals"));
+}
+else
+{
+    var storage = builder.AddAzureStorage("storage").RunAsEmulator();
+    var signalsContainer = storage.AddBlobContainer("signals");
+    api.WithReference(signalsContainer).WaitFor(signalsContainer)
+        .WithRoleAssignments(storage, StorageBuiltInRole.StorageBlobDataContributor);
+}
 
 // Queryable store: typed tables and the analysis functions (created by the API at startup).
-// Dev/Test size by default (one node, no SLA, stops when idle). Change it here for production volume.
-var kusto = builder.AddAzureKustoCluster("kusto")
-    .RunAsEmulator()
-    .ConfigureInfrastructure(infra =>
-    {
-#pragma warning disable AZPROVISION001 // Azure.Provisioning.Kusto is in preview.
-        var cluster = infra.GetProvisionableResources().OfType<KustoCluster>().Single();
-        cluster.Sku = new KustoSku
+if (UseExisting("signalsdb"))
+{
+    api.WithReference(builder.AddConnectionString("signalsdb"));
+}
+else
+{
+    // Dev/Test size by default (one node, no SLA, stops when idle). Change it here for production volume.
+    var kusto = builder.AddAzureKustoCluster("kusto")
+        .RunAsEmulator()
+        .ConfigureInfrastructure(infra =>
         {
-            Name = KustoSkuName.DevNoSlaStandardE2aV4,
-            Tier = KustoSkuTier.Basic,
-            Capacity = 1,
-        };
-        cluster.IsAutoStopEnabled = true;
+#pragma warning disable AZPROVISION001 // Azure.Provisioning.Kusto is in preview.
+            var cluster = infra.GetProvisionableResources().OfType<KustoCluster>().Single();
+            cluster.Sku = new KustoSku
+            {
+                Name = KustoSkuName.DevNoSlaStandardE2aV4,
+                Tier = KustoSkuTier.Basic,
+                Capacity = 1,
+            };
+            cluster.IsAutoStopEnabled = true;
 #pragma warning restore AZPROVISION001
-    });
-var signalsDb = kusto.AddReadWriteDatabase("signalsdb", "signals");
-
-var api = builder.AddDotnetProject("api", "../AgentSignals.Api/AgentSignals.Api.csproj")
-    .WithReference(signalsContainer).WaitFor(signalsContainer)
-    .WithReference(signalsDb).WaitFor(signalsDb)
-    .WithRoleAssignments(storage, StorageBuiltInRole.StorageBlobDataContributor)
-    .WithHttpHealthCheck("/health");
+        });
+    var signalsDb = kusto.AddReadWriteDatabase("signalsdb", "signals");
+    api.WithReference(signalsDb).WaitFor(signalsDb);
+}
 
 if (builder.ExecutionContext.IsPublishMode)
 {
