@@ -1,4 +1,5 @@
 using Aspire.Hosting.Azure;
+using Aspire.Hosting.Publishing;
 using Azure.Provisioning.Kusto;
 using Azure.Provisioning.Storage;
 using Microsoft.Extensions.Configuration;
@@ -78,6 +79,11 @@ if (builder.ExecutionContext.IsPublishMode)
     entra.WithPreAuthorizedApplication(azureCli, "Signals.Access");
 
     api.WithReference(entra).WithExternalHttpEndpoints();
+
+    // Container Apps runs x64 images. Without this, deploying from an ARM64 machine builds an ARM64 image.
+#pragma warning disable ASPIREPIPELINES003 // Container build options are experimental.
+    api.WithContainerBuildOptions(options => options.TargetPlatform = ContainerTargetPlatform.LinuxAmd64);
+#pragma warning restore ASPIREPIPELINES003
 }
 else
 {

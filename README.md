@@ -112,7 +112,8 @@ Locally the API accepts calls from your machine without a token. Send the protoc
 aspire deploy --apphost src/AgentSignals.AppHost
 ```
 
-Aspire asks for a subscription, resource group and region, then creates:
+Aspire asks for a subscription, resource group and region (a specific region such as `westus2` or
+`australiaeast`, not a geography such as "Australia"), then creates:
 
 | Resource | Purpose |
 | --- | --- |
@@ -124,6 +125,11 @@ Aspire asks for a subscription, resource group and region, then creates:
 The account that deploys needs permission to create resources in the subscription **and to create app
 registrations** in the subscription's tenant. Some organizations restrict the second; use a tenant
 where you are allowed to.
+
+Deploying also needs a running container runtime (Docker Desktop or Podman), even on a machine that
+cannot run the local emulators: Aspire builds the API's container image locally and pushes it to the
+registry. The image is always built for x64, which is what Container Apps runs, including when you
+deploy from an ARM64 machine.
 
 After deploying, assign the app roles: nobody can send or read signals until you do. See
 [Who can send and read signals](docs/access.md).
