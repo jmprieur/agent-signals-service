@@ -87,6 +87,11 @@ You need the .NET 10 SDK, the [Aspire CLI](https://aspire.dev) (version 17 previ
 packages), and a container runtime such as Docker Desktop or Podman. Storage and Kusto run as local
 emulators; no Azure account is needed.
 
+Install the preview CLI with `iex "& { $(irm https://aspire.dev/install.ps1) } -Quality dev"`
+(PowerShell) and check that `aspire --version` starts with `17.`. An older CLI cannot drive this
+AppHost: `aspire run` hangs on "Connecting to apphost…", and `aspire deploy` fails with "The AppHost
+is in publish mode and cannot be started with 'aspire run'".
+
 ```bash
 aspire run --apphost src/AgentSignals.AppHost
 ```
