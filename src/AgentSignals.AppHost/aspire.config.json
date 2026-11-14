@@ -1,5 +1,8 @@
 {
   "appHost": {
     "path": "AgentSignals.AppHost.csproj"
+  },
+  "configSource": {
+    "optOut": true
   }
 }
