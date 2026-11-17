@@ -45,6 +45,57 @@ The protocol's [Closing the loop](https://github.com/jennyf19/agentic-devops/blo
 document describes the reviewer in full, including a registry of known patterns. This service does not
 include a reviewer agent or a pattern registry yet.
 
+## What an outcome is
+
+An execution signal is the agent marking its own homework. An **outcome signal** is someone else
+marking it: an independent grade of the same run, sent with the same `run_id`. It is what turns the
+agent's confidence from a claim into something you can check. Without outcomes, the `calibration`
+report stays empty and `skill-health` cannot flag overconfidence.
+
+An outcome needs one score, `quality_rating`, on the same 1 to 5 scale the agent used for itself:
+how good was the result, judged independently? It can also say how much a person had to fix
+afterwards (`effort_to_merge`: none, minimal, moderate, significant) and list `issues_found`.
+
+```json
+{
+  "signal_type": "outcome",
+  "schema_version": "0.1.1",
+  "run_id": "<the run_id of the execution being graded>",
+  "timestamp": "2026-11-17T18:00:00Z",
+  "agent_name": "release-review",
+  "quality_rating": 4,
+  "effort_to_merge": "minimal"
+}
+```
+
+**Who can send it.** Anyone or anything that did not do the work:
+
+- **A person** who reviewed the result: the reviewer of a pull request, the owner of a ticket.
+- **An evaluator agent** that checks the work against criteria.
+- **An automated check** that turns a later fact into a grade: tests passed or failed, a pull request
+  merged unchanged or reworked, a ticket closed or reopened, a change rolled back.
+
+The agent that did the work must not send it: that would be a second self-report. Put the evaluator's
+name in `agent_name`, so you can tell evaluators apart and filter them.
+
+**Choosing a grade.** The protocol fixes the scale, not how you reach a grade; that depends on your
+work. Write the mapping down and use it consistently. For example, a team whose agent writes pull
+requests might choose: merged unchanged 5, merged after small edits 4, merged after substantial
+rework 2, abandoned or rejected 1. Two cautions:
+
+- **Make sure the top grade is reachable.** If your best possible outcome maps to 4, an agent that
+  rightly reports confidence 5 will always look like it over-claims.
+- **Grade the result, not the effort.** A run that took a long detour but produced the right result
+  deserves a good `quality_rating`; the detour belongs in the agent's own `what_was_hard`.
+
+**Timing.** Outcomes often arrive later than the execution: after a review, after tests, after a
+ticket stays closed for a week. A report pairs an execution and an outcome only when both fall in its
+window, so pick a window longer than your usual delay. Executions still waiting for a grade are
+counted in `overview` as `executions_without_outcome`.
+
+Handoffs use the same signal: an outcome with a `continuation` block grades how safely the next
+session could resume (see [`continuation`](#continuation-handoffs-between-sessions)).
+
 ## Before you read any report
 
 - **Scores run from 1 to 5, and higher is better.** 1 is poor, 3 adequate, 5 excellent. Values outside
