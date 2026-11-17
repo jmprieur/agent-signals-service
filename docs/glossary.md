@@ -37,14 +37,15 @@ candidates for the protocol, not part of it.
 | **Paired run** | A run that has both an execution and an outcome in the report's window. Only paired runs count in calibration |
 | **Calibration** | How close the agent's `confidence` is to the evaluator's `quality_rating`, on a 1 to 5 scale where 5 is a perfect match. See [calibration](improving-agents.md#calibration-how-far-to-trust-an-agents-confidence) |
 | **Over-claiming / under-claiming** | Confidence above / below the evaluator's grade. Over-claiming is the risky direction; under-claiming is safer but not more honest |
-| **Conforming** | The signal follows the protocol's field rules. Non-conforming signals are stored but left out of every score |
+| **Conforming** | The signal follows the protocol's field rules. Non-conforming signals are stored but left out of the scores (human-feedback ratings excepted, see [How it works](how-it-works.md#the-path-of-a-signal)) |
 | **Window** | The number of days a report looks back over (`days`). Only signals in the window count |
 | **Handoff** | Active work passed from one session or agent to another. The successor's execution sets `resumed_from_run_id` |
 
 ## Execution signal
 
 Sent by the working agent at the end of each run. **Everything in it is the agent's own claim**,
-unchecked until an outcome arrives.
+unchecked until an outcome arrives, and many runs never get one. [Sending signals](sending-signals.md)
+shows a minimal example and how to score.
 
 **Self-assessment** (`self_assessment`), each 1 to 5, higher is better:
 
@@ -83,10 +84,31 @@ unchecked until an outcome arrives.
 
 ## Outcome signal
 
-Sent by an evaluator about a run someone else did. **An outcome is an independent grade of the
-result of one run**: independent (never from the working agent), about the result (not the effort),
-and about one run (same `run_id` as the execution). See [What an outcome is](improving-agents.md#what-an-outcome-is)
-for who can send one and how to choose a grade.
+> **An outcome is an independent grade of the result of one run.** It is sent as a signal of type
+> `outcome`, with the same `run_id` as the execution it grades.
+
+Each part of that definition matters:
+
+- **Independent.** It comes from someone or something other than the agent that did the work: a
+  person, another agent, an automated check. The working agent never sends an outcome about its own
+  run.
+- **A grade of the result.** It judges what the run produced (was the answer right, did the change
+  work), not how hard the agent worked or how it went about it.
+- **One run.** It grades a single run. A weekly satisfaction average is not an outcome, because it
+  cannot be compared with one run's confidence.
+
+What is **not** an outcome:
+
+| Not an outcome | Why | Where it belongs |
+| --- | --- | --- |
+| The agent's own rating of its work | Not independent | The execution signal's `confidence`, `accuracy`, `completeness` |
+| A person's answer to a question the agent asked during the run | Reported by the agent, inside its own signal | `human_feedback` on the execution signal. Shown in the `human-feedback` report, not used for calibration |
+| A figure over many runs | Not tied to one run | Your own dashboards, or a query over the outcomes |
+
+[Sending outcomes](sending-signals.md#sending-outcomes) explains who can send one and how to choose a
+grade.
+
+**Fields:**
 
 | Field | Required | Meaning |
 | --- | --- | --- |

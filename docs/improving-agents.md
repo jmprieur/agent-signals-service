@@ -1,23 +1,31 @@
 # Using the reports to improve your agents
 
-Signals are worth collecting only if they change something. This page shows how a finding in the
-reports becomes a fix to what shapes an agent's behaviour (its own instructions, a skill, a guide or a
-tool), and how you check that the fix worked. It
-explains what each report's numbers mean, which values the service flags, and what a report cannot
-tell you.
+Signals are worth collecting only if they change something. This page explains how to read the
+reports, and how a finding becomes a fix to an agent and a check that the fix worked.
 
-Every rule on this page comes from the [Agent Signals protocol](https://github.com/jennyf19/agentic-devops/tree/main/agent-signals)
-or from the service's own queries in [`schema.kql`](../src/AgentSignals.Api/Kusto/schema.kql). Where
-the service adds a rule of its own, the page says so. For every field of every signal, see the
-[signals glossary](glossary.md).
+**If you read nothing else**, look at three reports once a week:
+
+1. [`overview`](#overview-is-data-arriving): is data arriving, and how much of it has been graded?
+2. [`patterns`](#patterns-problems-that-keep-coming-back): what problem do several runs keep reporting?
+   This is where most fixes come from.
+3. [`skill-health`](#skill-health-which-skills-need-attention): which kinds of task are struggling?
+
+Once some runs also have [outcomes](glossary.md#outcome-signal), add
+[`calibration`](#calibration-how-far-to-trust-an-agents-confidence): how far to trust each agent's
+confidence.
+
+Terms such as *execution*, *outcome* and *run* are defined in the [signals glossary](glossary.md).
+Every threshold on this page comes from the [Agent Signals protocol](https://github.com/jennyf19/agentic-devops/tree/main/agent-signals)
+or from the service's own queries in [`schema.kql`](../src/AgentSignals.Api/Kusto/schema.kql); where
+the service adds a rule of its own, the page says so.
 
 ## The improvement loop
 
 ```mermaid
 flowchart LR
-    Agent["Your agent<br/>runs a skill"] -->|"execution, outcome,<br/>escalation signals"| API["Agent Signals API"]
+    Agent["Your agent<br/>runs a task"] -->|"signals"| API["Agent Signals<br/>service"]
     API --> Store[("Archive + Kusto")]
-    Store -->|"reports (HTTP, MCP)<br/>or your own KQL"| Reviewer["Reviewer<br/>(an agent or a person)"]
+    Store -->|"reports (HTTP, MCP)<br/>or your own queries"| Reviewer["Reviewer<br/>(an agent or a person)"]
     Reviewer -->|"pull request or issue:<br/>fix the agent's instructions,<br/>a skill, a guide or a tool"| Owner["Owner<br/>reviews and merges"]
     Owner -->|"updated agent"| Agent
     Reviewer -->|"partnership signal:<br/>what was found and done"| API
@@ -29,197 +37,69 @@ flowchart LR
 ```
 
 Blue is what this service provides. Amber is yours: the service collects and analyses signals, but it
-does not change your agents. In words:
+does not change your agents.
 
-1. **Your agent reports** after each run: how sure it was, what was hard, what was missing. An
-   evaluator (another agent, a test, a person) grades the same run with an
-   [outcome signal](#what-an-outcome-is).
-2. **The service stores and analyses** the signals and answers the reports below.
-3. **A reviewer reads the reports** on a schedule. The protocol calls it a *consumer*; it can be an
-   agent using the MCP tools, or a person with the HTTP reports or Kusto.
-4. **The reviewer proposes a fix** as a pull request or issue, and a person merges it. The protocol
-   is explicit: a reviewer agent never merges its own changes or edits a production agent directly.
-5. **The reviewer records what it did** as a partnership signal. Those appear in `recommendations`,
-   so the next reviewer sees what is already being handled.
+1. **Your agent reports** after each run. Sometimes an evaluator also grades the run.
+2. **The service stores and analyses** the signals.
+3. **A reviewer reads the reports** on a schedule. It can be a person, or an agent using the MCP
+   tools (the protocol calls it a *consumer*).
+4. **The reviewer proposes a fix** as a pull request or issue, and a person merges it. A reviewer
+   agent never merges its own changes or edits a production agent directly.
+5. **The reviewer records what it did** as a partnership signal, so the next reviewer sees it in
+   `recommendations`.
 6. **The next runs show whether the fix held.** See [Checking that a fix worked](#checking-that-a-fix-worked).
 
 The protocol's [Closing the loop](https://github.com/jennyf19/agentic-devops/blob/main/agent-signals/closing-the-loop.md)
-document describes the reviewer in full, including a registry of known patterns. This service does not
-include a reviewer agent or a pattern registry yet.
+describes the reviewer in full. This service does not include a reviewer agent yet.
 
-## What the agent says about its own work
+## The reports at a glance
 
-After each run, the working agent sends an **execution signal** with its self-assessment. Three
-scores are required, each 1 to 5:
+Ask for a report through MCP, by having an agent call the matching tool, or over HTTP with
+`GET /v1/insights/{report}?days=7` (role `Signals.Read`). Add `skill` to look at one kind of task;
+`overview`, `patterns` and `model-calibration` always cover every skill.
 
-| Score | The agent's answer to |
-| --- | --- |
-| `confidence` | How sure am I that this result is right? |
-| `accuracy` | How correct do I think the work is? |
-| `completeness` | How much of what was asked did I do? |
-
-**Confidence is a prediction.** The agent is guessing how its result will be judged, before anyone
-has judged it. The other two scores describe the work; confidence says how much to rely on that
-description. That is why confidence, and only confidence, is compared with the independent grade.
-
-All three are the agent's own view. None of them is checked until an [outcome](#what-an-outcome-is)
-arrives, and many runs never get one. The [glossary](glossary.md#execution-signal) lists every field
-of an execution signal.
-
-## What an outcome is
-
-> **An outcome is an independent grade of the result of one run.** It is sent as a signal of type
-> `outcome`, with the same `run_id` as the execution signal it grades.
-
-Each part of that definition matters:
-
-- **Independent.** It comes from someone or something other than the agent that did the work: a
-  person, another agent, an automated check. The working agent can never send an outcome about its
-  own run.
-- **A grade of the result.** It judges what the run produced (was the answer right, did the change
-  work), not how hard the agent worked or how it went about it.
-- **One run.** It grades a single run, joined by `run_id`. A weekly satisfaction average or a
-  team-level metric is not an outcome, because it cannot be compared with one run's confidence.
-
-An execution signal is the agent marking its own homework; an outcome is someone else marking it.
-Comparing the two is what turns the agent's confidence from a claim into something you can check.
-Without outcomes, the `calibration` report stays empty and `skill-health` cannot flag overconfidence.
-
-What an outcome is **not**:
-
-| Not an outcome | Why | Where it goes instead |
-| --- | --- | --- |
-| The agent's own rating of its work | Not independent | The execution signal's `confidence`, `accuracy`, `completeness` |
-| A person's answer to a question the agent asked during the run | Reported by the agent, inside its own signal | `human_feedback` on the execution signal; shown in the `human-feedback` report, not used for calibration |
-| An aggregate over many runs | Not tied to one run | Your own dashboards, or a query over the outcomes |
-
-An outcome needs one score, `quality_rating`, on the same 1 to 5 scale the agent used for itself:
-how good was the result, judged independently? It is the evaluator's score, never the agent's; it is
-the number the agent's `confidence` is compared with. An outcome can also say how much a person had to fix
-afterwards (`effort_to_merge`: none, minimal, moderate, significant) and list `issues_found`.
-
-```json
-{
-  "signal_type": "outcome",
-  "schema_version": "0.1.1",
-  "run_id": "<the run_id of the execution being graded>",
-  "timestamp": "2026-11-17T18:00:00Z",
-  "agent_name": "release-review",
-  "quality_rating": 4,
-  "effort_to_merge": "minimal"
-}
-```
-
-**Who can send it.** Anyone or anything that did not do the work:
-
-- **A person** who reviewed the result: the reviewer of a pull request, the owner of a ticket.
-- **An evaluator agent** that checks the work against criteria.
-- **An automated check** that turns a later fact into a grade: tests passed or failed, a pull request
-  merged unchanged or reworked, a ticket closed or reopened, a change rolled back.
-
-The agent that did the work must not send it: that would be a second self-report. Put the evaluator's
-name in `agent_name`, so you can tell evaluators apart and filter them.
-
-**Choosing a grade.** The protocol fixes the scale, not how you reach a grade; that depends on your
-work. Write the mapping down and use it consistently. For example, a team whose agent writes pull
-requests might choose: merged unchanged 5, merged after small edits 4, merged after substantial
-rework 2, abandoned or rejected 1. Two cautions:
-
-- **Make sure the top grade is reachable.** If the best result your check can observe maps to 4, an agent that
-  rightly reports confidence 5 will always look like it over-claims.
-- **Grade the result, not the effort.** A run that took a long detour but produced the right result
-  deserves a good `quality_rating`; the detour belongs in the agent's own `what_was_hard`.
-
-**Timing.** Outcomes often arrive later than the execution: after a review, after tests, after a
-ticket stays closed for a week. A report pairs an execution and an outcome only when both fall in its
-window, so pick a window longer than your usual delay. Executions still waiting for a grade are
-counted in `overview` as `executions_without_outcome`.
-
-Handoffs use the same signal: an outcome with a `continuation` block grades how safely the next
-session could resume (see [`continuation`](#continuation-handoffs-between-sessions)).
+| Report | Answers | MCP tool | Needs outcomes? |
+| --- | --- | --- | --- |
+| `overview` | How much data is arriving, and how much has been graded | `get_overview` | No |
+| `patterns` | Which problems several runs keep reporting | `get_pattern_candidates` | No |
+| `pattern-evidence` | The exact wording behind those problems | `get_pattern_evidence` | No |
+| `skill-health` | Which kinds of task are struggling | `get_skill_health` | Partly: the overconfidence rule |
+| `escalations` | Recent requests for a person | `get_escalations` | No |
+| `human-feedback` | Optional ratings people gave when an agent asked them | HTTP only | No |
+| `recommendations` | What reviewer agents suggest, outcome-backed suggestions first | `get_recommendations` | No, but they are stronger with |
+| `calibration` | How far each agent's confidence matches independent grades | `get_calibration` | **Yes** |
+| `model-calibration` | The same, per model that did the work | HTTP only | **Yes** |
+| `continuation` | Whether handoffs between sessions held up | `get_continuation_gap` | **Yes**, to verify them |
 
 ## Before you read any report
 
-- **Scores run from 1 to 5, and higher is better.** 1 is poor, 3 adequate, 5 excellent. Values outside
-  1 to 5, or not whole numbers, make a signal non-conforming: it is stored but left out of every score.
-- **A report covers a window of days**, 90 at most. Over HTTP the default is 7 (`?days=7`); each MCP
-  tool states its own default. The protocol suggests the
-  window follow your volume: 7 days below 50 signals a week, 3 days for 50 to 500, 24 hours above 500.
-  A longer window gives more runs, so more rules reach their minimum and more findings appear.
-- **Many runs will have no outcome, and that is normal.** An execution signal is the agent's own
-  view; it is checked only when an outcome for the same `run_id` arrives from someone else. Patterns,
-  escalations and most of `skill-health` work from executions alone; calibration and overconfidence
-  need outcomes. See [Executions without outcomes](glossary.md#executions-without-outcomes).
-- **Runs that send nothing are invisible.** Every rate is a share of runs that sent a signal. An agent
+- **Scores run from 1 to 5, and higher is better.** Signals with other values are stored but left out
+  of the scores.
+- **A report covers a window of days**, 90 at most; 7 by default over HTTP. The protocol suggests 7
+  days below 50 signals a week, 3 days for 50 to 500, 24 hours above 500. A longer window means more
+  runs, so more rules reach their minimum and more findings appear.
+- **Many runs will have no outcome, and that is normal.** The reports marked "No" above work from the
+  agents' own signals alone. See [Executions without outcomes](glossary.md#executions-without-outcomes).
+- **Runs that send nothing are invisible.** Every rate is a share of runs that sent a signal; an agent
   that crashes before reporting does not lower any score. If you can, count runs from your own logs
   and compare.
 
-## Start with `overview`
+## Reports that work from the agents' own signals
 
-Counts for the window: signals, runs, agents, skills, and how many signals were non-conforming or
-converted from ALAS. Check two numbers first:
+### `overview`: is data arriving?
+
+Counts for the window: signals, runs, agents, skills. Check two numbers:
 
 | Field | What to look for |
 | --- | --- |
-| `conforming_signals` versus `signals` | A gap means senders are breaking field rules. Those signals are kept but not scored |
-| `executions_without_outcome` | Runs nobody has graded yet. If this is most of them, calibration rests on a small sample |
+| `conforming_signals` versus `signals` | A gap means senders break field rules. Those signals are kept but not scored |
+| `executions_without_outcome` | Runs nobody has graded yet. Normal; but if it is nearly all of them, calibration rests on very few runs |
 
-## `skill-health`: which skills need attention
+### `patterns`: problems that keep coming back
 
-One row per skill, with a `severity` of `CRITICAL`, `HIGH` or `OK`. A finding needs at least 5 runs
-of that skill in the window, so new or rarely used skills show `OK` until there is enough evidence.
-
-| Rule | Flagged when | Severity |
-| --- | --- | --- |
-| Low confidence | 5 or more runs reported confidence 3 or lower | CRITICAL |
-| Escalation rate | More than half of the runs asked for a person | CRITICAL |
-| Confidence decline | Mean confidence fell by more than 1.0 versus the previous window (both windows need 5 runs) | HIGH |
-| Overconfidence | Mean confidence is more than 1.0 above the evaluator's mean grade, over 5 or more paired runs | HIGH |
-
-Read `OK` as "no rule fired", not "healthy". A skill with no outcome signals can never be flagged as
-overconfident.
-
-## `calibration`: how far to trust an agent's confidence
-
-For each run that has both an execution and an outcome, the protocol's trust equation compares the
-agent's confidence with the independent grade:
-
-```
-calibration = 5 - |confidence - quality_rating|
-```
-
-| Mean calibration | Meaning (protocol) |
-| --- | --- |
-| 5 | The agent knows exactly what it knows |
-| 4 | Well calibrated, minor differences |
-| 3 | Moderate miscalibration: check which way it misses |
-| 2 or lower | Significant miscalibration: adjust the agent or its instructions |
-
-The report also tells you which way the agent misses (`mean_delta` is confidence minus the
-independent grade):
-
-- **Over-claiming**: `mean_delta` above zero, or many `overclaimed_runs`. The agent says its work is
-  better than it is. This is the risky direction: people trust results they should have checked.
-  `skill-health` flags it.
-- **Under-claiming**: `mean_delta` below zero, or many `underclaimed_runs`. The agent says its work
-  is worse than it is. This is safer, and `skill-health` does not flag it, but it is not more honest.
-  Honest means the confidence *matches* the grade, which is why calibration counts a gap in either
-  direction. Steady under-claiming costs people's time (they re-check or take over work that was
-  fine) and can be a form of hedging. Treat it as a smaller problem, not as a goal.
-
-The `note` column warns about two cases where a good score can mislead:
-
-- **Fewer than 5 paired runs:** too little evidence to judge (a service rule).
-- **Confidence barely varies** (`confidence_spread` under 0.5) **with good calibration:** an agent that
-  always answers "3" keeps the gap small without being honest. The protocol calls this a known,
-  unsolved weakness of the measure.
-
-`model-calibration` gives the same figures per model, to see whether a model change moved them.
-
-## `patterns`: problems that keep coming back
-
-Agents describe what got in their way in fields such as `tsg_gap` (a troubleshooting guide is
-missing something) or `environment_blockers`. When the same value repeats, it becomes something to fix.
+Agents name what got in their way in fields such as `tsg_gap` (a troubleshooting guide is missing
+something) or `environment_blockers` (a tool or access got in the way). When the same text repeats,
+it becomes something to fix.
 
 | Field | Runs in one skill before it counts |
 | --- | --- |
@@ -238,54 +118,103 @@ Two things to know:
 - **Matching is exact** (after lower-casing and trimming punctuation). "Missing step 4" and "step 4 is
   missing" count separately, so the report undercounts. `pattern-evidence` returns the raw wording, so
   an agent or a person can group similar entries.
-- **A value seen in 3 skills is actionable even if each skill saw it once.** If your agents use short
-  codes (for example `access` or `throttled`), a common code will reach this quickly. That is often
-  right, but check that a code is specific enough to act on.
+- **A value seen in 3 skills is actionable even if each skill saw it once.** If agents use short
+  codes (for example `access` or `throttled`), a common code reaches this quickly. Check that a code is
+  specific enough to act on.
 
-Short codes from an agreed list group much better than prose, and carry less risk of personal data.
+### `skill-health`: which skills need attention
 
-## `continuation`: handoffs between sessions
+One row per skill (kind of task), with a `severity` of `CRITICAL`, `HIGH` or `OK`. A finding needs at
+least 5 runs of that skill in the window, so new or rarely used skills show `OK` until there is enough
+evidence.
 
-When one agent or session hands work to another, the first reports `continuation_readiness` and the
-successor (or an evaluator) reports `recovery_rating`. The report shows both, the gap between them, and
-how many handoffs lost evidence (`material_provenance_loss`) or decision boundaries
-(`material_authority_loss`).
+| Rule | Flagged when | Severity |
+| --- | --- | --- |
+| Low confidence | 5 or more runs reported confidence 3 or lower | CRITICAL |
+| Escalation rate | More than half of the runs asked for a person | CRITICAL |
+| Confidence decline | Mean confidence fell by more than 1.0 versus the previous window (both windows need 5 runs) | HIGH |
+| Overconfidence (needs outcomes) | Mean confidence is more than 1.0 above the evaluators' mean grade, over 5 or more graded runs | HIGH |
 
-Read the gap together with `mean_recovery_rating`. A readiness of 1 and a recovery of 1 give a gap of
-zero, yet the handoff failed. `unverified_handoffs` are claims nobody has checked; they are not
-evidence that the handoff worked. The service does not grade this report.
+Read `OK` as "no rule fired", not "healthy".
 
-## `escalations`, `recommendations` and `human-feedback`
+### `escalations`, `human-feedback` and `recommendations`
 
 - `escalations` lists recent requests for a person, newest first, with severity and whether work was
-  blocked. A falling escalation rate is good news only if outcome grades hold steady.
-- `recommendations` lists suggestions from reviewer agents (partnership signals). Those already
-  confirmed by outcomes come first.
-- `human-feedback` shows optional ratings from people next to the agent's confidence for the same
-  runs. Autonomous runs have none, so a low count is expected.
+  blocked. A falling escalation rate is good news only if the work is still good.
+- `human-feedback` shows ratings people gave when an agent asked them, next to the agent's own
+  confidence. Autonomous runs have none, so a low count is expected.
+- `recommendations` lists suggestions from reviewer agents (partnership signals). Those backed by
+  outcomes come first; treat the others as leads, not facts.
+
+## Reports that need outcomes
+
+### `calibration`: how far to trust an agent's confidence
+
+For each run that has both the agent's signal and an outcome, the protocol's *trust equation*
+compares the agent's confidence with the independent grade:
+
+```
+calibration = 5 - |confidence - quality_rating|
+```
+
+| Mean calibration | Meaning (protocol) |
+| --- | --- |
+| 5 | The agent knows exactly what it knows |
+| 4 | Well calibrated, minor differences |
+| 3 | Moderate miscalibration: check which way it misses |
+| 2 or lower | Significant miscalibration: adjust the agent or its instructions |
+
+Which way it misses (`mean_delta` is confidence minus the grade):
+
+- **Over-claiming** (`mean_delta` above zero, many `overclaimed_runs`): the agent says its work is
+  better than it is. This is the risky direction: people trust results they should have checked.
+- **Under-claiming** (`mean_delta` below zero, many `underclaimed_runs`): the agent says its work is
+  worse than it is. Safer, but not more honest: honest means the confidence *matches* the grade.
+  Steady under-claiming costs people's time (they re-check work that was fine) and can be a form of
+  hedging. Treat it as a smaller problem, not a goal.
+
+The `note` column warns when a good score can mislead:
+
+- **Fewer than 5 graded runs:** too little evidence to judge (a service rule).
+- **Confidence barely varies** (`confidence_spread` under 0.5): an agent that always answers "3" keeps
+  the gap small without being honest. The protocol calls this a known, unsolved weakness.
+
+`model-calibration` compares models: per model that did the work, the number of graded runs, mean
+calibration, mean confidence, mean grade and `mean_delta`. It has no `note`, spread or over- and
+under-claim counts, so check the number of graded runs yourself before comparing models.
+
+### `continuation`: handoffs between sessions
+
+When one session hands work to another, the first reports how ready the handoff is
+(`continuation_readiness`), and the successor or an evaluator reports how well it could resume
+(`recovery_rating`, in an outcome). The report shows both, the gap, and how many handoffs lost their
+evidence trail or decision boundaries.
+
+Read the gap together with `mean_recovery_rating`: a readiness of 1 and a recovery of 1 give a gap of
+zero, yet the handoff failed. `unverified_handoffs` are claims nobody has checked, not evidence that
+the handoff worked.
 
 ## What the reports cannot tell you
 
 - Whether runs that never sent a signal went well.
-- Whether an agent's self-reports are honest, until independent outcomes arrive.
+- Whether an agent's self-reports are honest, until outcomes arrive.
 - Whether two differently worded problems are the same problem.
-- Anything about a skill with fewer than 5 runs in the window.
+- Whether a skill is healthy when it has fewer than 5 runs in the window: the `skill-health` rules
+  need 5. Patterns, escalations and individual signals are still useful with fewer.
 
 ## Acting on a finding
 
 A fix lands wherever the agent gets the knowledge it was missing:
 
 - **The agent's own instructions** (for example `AGENTS.md`, an agent definition, or its system
-  prompt), when the problem shows up across many tasks: how it should grade itself, when to ask a
-  person, which rules always apply.
+  prompt), when the problem shows up across many kinds of task: how it should grade itself, when to
+  ask a person, which rules always apply.
 - **A skill** (for example a `SKILL.md`), when the problem is specific to one kind of task.
 - **A troubleshooting guide or other documentation** the agent reads.
 - **A tool, access right or service**, when the agent was blocked rather than uninformed.
 
-The `skill_used` field tells you which task a finding came from. A finding that appears in several
-skills often belongs in the agent's instructions instead.
-
-The protocol suggests a response for each kind of finding:
+A finding that appears in several skills often belongs in the agent's instructions. The protocol
+suggests a response for each kind of finding:
 
 | Finding | Suggested response |
 | --- | --- |
@@ -296,12 +225,11 @@ The protocol suggests a response for each kind of finding:
 | `what_was_hard`, `recurring_pattern` | Mention in the regular report; act only if it points at something specific |
 | Skill-health finding | Ask the owner of the skill or agent to review. A score alone does not say what to change |
 
-Keep fixes free of personal data: describe the gap, not the user or customer who hit it, and do not
-copy signal text into a pull request without checking it.
+Keep fixes free of personal data: describe the gap, not the person or customer who hit it.
 
 ## Checking that a fix worked
 
-A merged fix is not proof. The protocol treats a pattern as resolved only when, after the fix:
+A merged fix is not proof. The protocol treats a problem as resolved only when, after the fix:
 
 1. at least one full window has passed,
 2. the skill has had enough new runs to judge (the pattern's run count, or 5 runs for a skill-health
@@ -309,13 +237,13 @@ A merged fix is not proof. The protocol treats a pattern as resolved only when, 
 3. the pattern stayed below its count, or the skill-health rule no longer fires.
 
 Compare the same report before and after, with the same window. Rising confidence is encouraging but
-not enough on its own: the agent may simply feel surer. Look for the gap disappearing from `patterns`
-and, where you have outcomes, for calibration holding.
+not enough: the agent may simply feel surer. Look for the problem disappearing from `patterns` and,
+where you have outcomes, for calibration holding.
 
 ## Querying Kusto directly
 
-The reports are Kusto functions in the `signals` database, so anything a report shows you can also
-query, filter and chart yourself in the [Azure Data Explorer web UI](https://dataexplorer.azure.com):
+Each report is a Kusto function in the `signals` database, so you can also query, filter and chart
+the data yourself in the [Azure Data Explorer web UI](https://dataexplorer.azure.com):
 
 ```kusto
 // The skill-health report for the last 7 days
@@ -333,10 +261,9 @@ SignalExecutions(30d)
 | render timechart
 ```
 
-The `Signal…` functions return one row per signal, even if a client sent it twice; prefer them to
-reading the tables directly. The tables and their columns are defined in
-[`SignalTables.cs`](../src/AgentSignals.Api/Kusto/SignalTables.cs).
+Prefer the `Signal…` functions to the tables: they return one row per signal even if a client sent it
+twice. The tables and their columns are defined in [`SignalTables.cs`](../src/AgentSignals.Api/Kusto/SignalTables.cs).
 
-After deployment, only the API can read the database. To query it yourself, give your account the
+After deployment, only the service itself can read the database. To query it, give your account the
 **Viewer** role on the `signals` database (Azure portal: the Data Explorer cluster, then Databases,
 `signals`, Permissions).
