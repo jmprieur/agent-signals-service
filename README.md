@@ -5,6 +5,8 @@ AI agents forget everything between sessions. When an agent finishes a task, the
 leave a short, honest report: how confident it was, what was hard, where the documentation fell
 short. A separate evaluator, which can be an agent or a person, later rates the actual result: that
 independent grade of one run is called an *outcome* ([more](docs/improving-agents.md#what-an-outcome-is)).
+Many runs never get one, and the service is still useful without it. The [signals glossary](docs/glossary.md)
+defines every field.
 
 This repository is a small service you deploy to **your own Azure subscription** to collect those
 signals and turn them into answers:
@@ -200,7 +202,7 @@ This is a safety net, not a guarantee. Agents remain responsible for what they s
 | `tests/AgentSignals.Tests` | Protocol, conversion, privacy, KQL analysis and endpoint tests |
 | `scripts/Grant-SignalsRole.ps1` | Assigns app roles |
 | `samples/` | Example signals and a sender with local fallback |
-| `docs/` | [Using the reports](docs/improving-agents.md), [running locally](docs/local-development.md), [access](docs/access.md), [ALAS conversion](docs/alas-translation.md) |
+| `docs/` | [Signals glossary](docs/glossary.md), [using the reports](docs/improving-agents.md), [running locally](docs/local-development.md), [access](docs/access.md), [ALAS conversion](docs/alas-translation.md) |
 
 ## License
 

@@ -8,7 +8,8 @@ tell you.
 
 Every rule on this page comes from the [Agent Signals protocol](https://github.com/jennyf19/agentic-devops/tree/main/agent-signals)
 or from the service's own queries in [`schema.kql`](../src/AgentSignals.Api/Kusto/schema.kql). Where
-the service adds a rule of its own, the page says so.
+the service adds a rule of its own, the page says so. For every field of every signal, see the
+[signals glossary](glossary.md).
 
 ## The improvement loop
 
@@ -62,7 +63,8 @@ has judged it. The other two scores describe the work; confidence says how much 
 description. That is why confidence, and only confidence, is compared with the independent grade.
 
 All three are the agent's own view. None of them is checked until an [outcome](#what-an-outcome-is)
-arrives.
+arrives, and many runs never get one. The [glossary](glossary.md#execution-signal) lists every field
+of an execution signal.
 
 ## What an outcome is
 
@@ -144,9 +146,10 @@ session could resume (see [`continuation`](#continuation-handoffs-between-sessio
   tool states its own default. The protocol suggests the
   window follow your volume: 7 days below 50 signals a week, 3 days for 50 to 500, 24 hours above 500.
   A longer window gives more runs, so more rules reach their minimum and more findings appear.
-- **Self-reports are only half the picture.** An execution signal is the agent's own view. It is
-  checked only when an outcome signal for the same `run_id` arrives from someone else: another agent,
-  a test result, a person. Without outcomes, calibration and overconfidence stay empty.
+- **Many runs will have no outcome, and that is normal.** An execution signal is the agent's own
+  view; it is checked only when an outcome for the same `run_id` arrives from someone else. Patterns,
+  escalations and most of `skill-health` work from executions alone; calibration and overconfidence
+  need outcomes. See [Executions without outcomes](glossary.md#executions-without-outcomes).
 - **Runs that send nothing are invisible.** Every rate is a share of runs that sent a signal. An agent
   that crashes before reporting does not lower any score. If you can, count runs from your own logs
   and compare.
