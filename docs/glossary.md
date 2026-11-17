@@ -102,7 +102,7 @@ What is **not** an outcome:
 | Not an outcome | Why | Where it belongs |
 | --- | --- | --- |
 | The agent's own rating of its work | Not independent | The execution signal's `confidence`, `accuracy`, `completeness` |
-| A person's answer to a question the agent asked during the run | Reported by the agent, inside its own signal | `human_feedback` on the execution signal. Shown in the `human-feedback` report, not used for calibration |
+| A person's answer to a feedback question the agent asked during the run | Reported by the agent, inside its own signal | `human_feedback` on the execution signal. Shown in the `human-feedback` report, not used for calibration |
 | A figure over many runs | Not tied to one run | Your own dashboards, or a query over the outcomes |
 
 [Sending outcomes](sending-signals.md#sending-outcomes) explains who can send one and how to choose a
