@@ -26,11 +26,11 @@ This is a working prototype, not a hosted product.
 
 | What | State |
 | --- | --- |
-| Receiving, checking, archiving and loading signals | Built; covered by 88 automated tests that use in-memory stand-ins for storage and Kusto |
-| Analysis queries (KQL) | Checked for syntax, unknown columns and type errors with Microsoft's Kusto language analyzer; **not yet run against a Kusto engine** |
+| Receiving, checking, archiving and loading signals | Covered by 88 automated tests, and run end to end on Windows x64 against the local storage and Kusto emulators |
+| Analysis queries (KQL) | All checked with Microsoft's Kusto language analyzer. `overview`, `skill-health` and `patterns` have answered from the Kusto emulator; the others **have not yet run against a Kusto engine** |
 | ALAS conversion | Run over 5,392 real ALAS signals: 96.8% of executions and 98.8% of outcomes conform afterwards ([details](docs/alas-translation.md#results-on-real-alas-signals)) |
-| Azure deployment | Deployment templates generate correctly; **not yet deployed**, and the full app has not been run locally against working emulators or real resources |
-| MCP tools | Built; **not yet exercised by an MCP client** |
+| Azure deployment | Deployment templates generate correctly; **not yet deployed**, so Entra ID sign-in and app roles are untested |
+| MCP tools | An MCP client listed the tools and called a report against a local run. Submitting signals through MCP is not yet tested |
 
 It builds on preview packages: Aspire 17 daily builds, including Aspire's new Entra ID integration.
 Expect to update package versions when Aspire 17 ships.
@@ -43,8 +43,12 @@ flowchart LR
     API -->|"one file per signal"| Blob[("Blob Storage<br/>archive")]
     API -->|"small batches"| Kusto[("Azure Data Explorer<br/>typed tables + analysis functions")]
     Kusto --> API
-    API -->|reports, recommendations| Agent
+    API -->|reports, recommendations| Reviewer["Reviewer<br/>(agent or person)"]
+    Reviewer -.->|"fix to a guide, skill or tool,<br/>merged by a person"| Agent
 ```
+
+The dotted arrow is the point of the whole exercise, and it is yours to build: someone reads the
+reports and changes the agent. See [Using the reports to improve your agents](docs/improving-agents.md).
 
 1. **Check.** Each signal is checked against the protocol's field rules. Signals that contain
    secrets or email addresses are **rejected and not stored**. Signals that break other rules are
@@ -66,7 +70,8 @@ created by hand.
 ## Reports
 
 `GET /v1/insights/{report}?days=7&top=50&skill=<optional>` (role `Signals.Read`). The same reports
-are available as MCP tools.
+are available as MCP tools. [Using the reports to improve your agents](docs/improving-agents.md)
+explains what each number means, which values are flagged, and how to query Kusto directly.
 
 | Report | Answers |
 | --- | --- |
@@ -89,22 +94,52 @@ emulators; no Azure account is needed.
 
 Install the preview CLI with `iex "& { $(irm https://aspire.dev/install.ps1) } -Quality dev"`
 (PowerShell) and check that `aspire --version` starts with `17.`. An older CLI cannot drive this
-AppHost: `aspire run` hangs on "Connecting to apphost…", and `aspire deploy` fails with "The AppHost
-is in publish mode and cannot be started with 'aspire run'".
+AppHost: the build stops with `ASPIRE009` (CLI bundle not found), `aspire run` hangs on "Connecting
+to apphost…", or `aspire deploy` fails with "The AppHost is in publish mode and cannot be started
+with 'aspire run'".
+
+If your network blocks nuget.org, see [Restoring packages on a restricted network](docs/local-development.md#restoring-packages-on-a-restricted-network).
 
 ```bash
+dotnet build AgentSignals.slnx
+dotnet test --solution AgentSignals.slnx
 aspire run --apphost src/AgentSignals.AppHost
 ```
+
+`aspire run` prints the address of the Aspire dashboard, with a sign-in token. The first run downloads
+the emulator images; after that, the app is ready in about a minute. A warning that developer
+certificates are not trusted is harmless; `aspire certs trust` removes it. Check that the API is up
+with `http://localhost:5280/health`.
 
 **No container runtime, or an ARM64 machine?** The Kusto emulator is published for x64 only. You
 can point the local run at a real Kusto database instead, such as Azure Data Explorer's free
 cluster, and at a real storage account if needed. See [Running locally](docs/local-development.md).
 
-Locally the API accepts calls from your machine without a token. Send the protocol's example signal:
+Locally the API accepts calls from your machine without a token. Send the protocol's example signals
+and read a report:
 
 ```powershell
 ./samples/Send-Signal.ps1 -ApiUrl http://localhost:5280 -Path ./samples/signals/execution.json -Local
+./samples/Send-Signal.ps1 -ApiUrl http://localhost:5280 -Path ./samples/signals/outcome.json -Local
+Invoke-RestMethod "http://localhost:5280/v1/insights/overview?days=30"
 ```
+
+The MCP server is at `http://localhost:5280/mcp`. To try it from an agent in VS Code, add it to the
+workspace's `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "agent-signals": { "type": "http", "url": "http://localhost:5280/mcp" }
+  }
+}
+```
+
+The agent is offered every tool of a registered MCP server in every chat of that workspace, so
+consider registering it only in the workspaces where you want agents to send signals.
+
+Stop with Ctrl+C in the `aspire run` window, or `aspire stop`. If the process is killed instead, the
+emulator containers keep running; list them with `docker ps` and stop them with `docker stop <id>`.
 
 ## Deploy to your subscription
 
@@ -164,11 +199,7 @@ This is a safety net, not a guarantee. Agents remain responsible for what they s
 | `tests/AgentSignals.Tests` | Protocol, conversion, privacy, KQL analysis and endpoint tests |
 | `scripts/Grant-SignalsRole.ps1` | Assigns app roles |
 | `samples/` | Example signals and a sender with local fallback |
-
-```bash
-dotnet build AgentSignals.slnx
-dotnet test --solution AgentSignals.slnx
-```
+| `docs/` | [Using the reports](docs/improving-agents.md), [running locally](docs/local-development.md), [access](docs/access.md), [ALAS conversion](docs/alas-translation.md) |
 
 ## License
 

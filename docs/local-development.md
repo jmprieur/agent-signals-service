@@ -67,3 +67,37 @@ cluster in your subscription, ask for the **Database Admin** role on the databas
 3. Set `ConnectionStrings:signals` to `Endpoint=https://<account>.blob.core.windows.net/;ContainerName=signals`.
 
 Use a development account: every signal you send locally is stored there.
+
+## Restoring packages on a restricted network
+
+Some networks block nuget.org and provide a package mirror instead. The repository's `NuGet.config`
+uses nuget.org plus the Aspire daily feed (the Aspire 17 preview packages are not on nuget.org yet),
+so on such a network the restore fails. Your mirror may not carry the preview packages either.
+
+Keep a config file **outside the repository** that uses your mirror for everything except Aspire:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="mirror" value="https://<your package mirror>/v3/index.json" />
+    <add key="aspire-daily" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="aspire-daily"><package pattern="Aspire.*" /></packageSource>
+    <packageSource key="mirror"><package pattern="*" /></packageSource>
+  </packageSourceMapping>
+</configuration>
+```
+
+Then restore with it, and build without restoring again:
+
+```powershell
+dotnet restore AgentSignals.slnx --configfile <path>\nuget-mirror.config
+dotnet build AgentSignals.slnx --no-restore
+```
+
+Keep the `packageSourceMapping` section: with two sources and central package management, NuGet
+otherwise stops with error NU1507. If your network also blocks the Aspire daily feed, ask whoever
+runs your mirror to add it as an upstream source.
