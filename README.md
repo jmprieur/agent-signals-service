@@ -44,7 +44,7 @@ flowchart LR
     API -->|"small batches"| Kusto[("Azure Data Explorer<br/>typed tables + analysis functions")]
     Kusto --> API
     API -->|reports, recommendations| Reviewer["Reviewer<br/>(agent or person)"]
-    Reviewer -.->|"fix to a guide, skill or tool,<br/>merged by a person"| Agent
+    Reviewer -.->|"fix to the agent's instructions,<br/>a skill, a guide or a tool,<br/>merged by a person"| Agent
 ```
 
 The dotted arrow is the point of the whole exercise, and it is yours to build: someone reads the

@@ -1,7 +1,8 @@
 # Using the reports to improve your agents
 
 Signals are worth collecting only if they change something. This page shows how a finding in the
-reports becomes a fix to an agent's guide, skill or tools, and how you check that the fix worked. It
+reports becomes a fix to what shapes an agent's behaviour (its own instructions, a skill, a guide or a
+tool), and how you check that the fix worked. It
 explains what each report's numbers mean, which values the service flags, and what a report cannot
 tell you.
 
@@ -16,8 +17,8 @@ flowchart LR
     Agent["Your agent<br/>runs a skill"] -->|"execution, outcome,<br/>escalation signals"| API["Agent Signals API"]
     API --> Store[("Archive + Kusto")]
     Store -->|"reports (HTTP, MCP)<br/>or your own KQL"| Reviewer["Reviewer<br/>(an agent or a person)"]
-    Reviewer -->|"pull request or issue:<br/>fix a guide, skill or tool"| Owner["Skill owner<br/>reviews and merges"]
-    Owner -->|"updated skill"| Agent
+    Reviewer -->|"pull request or issue:<br/>fix the agent's instructions,<br/>a skill, a guide or a tool"| Owner["Owner<br/>reviews and merges"]
+    Owner -->|"updated agent"| Agent
     Reviewer -->|"partnership signal:<br/>what was found and done"| API
 
     classDef provided fill:#dbeafe,stroke:#2563eb;
@@ -35,7 +36,7 @@ does not change your agents. In words:
 3. **A reviewer reads the reports** on a schedule. The protocol calls it a *consumer*; it can be an
    agent using the MCP tools, or a person with the HTTP reports or Kusto.
 4. **The reviewer proposes a fix** as a pull request or issue, and a person merges it. The protocol
-   is explicit: a reviewer agent never merges its own changes or edits a production skill directly.
+   is explicit: a reviewer agent never merges its own changes or edits a production agent directly.
 5. **The reviewer records what it did** as a partnership signal. Those appear in `recommendations`,
    so the next reviewer sees what is already being handled.
 6. **The next runs show whether the fix held.** See [Checking that a fix worked](#checking-that-a-fix-worked).
@@ -173,16 +174,28 @@ evidence that the handoff worked. The service does not grade this report.
 
 ## Acting on a finding
 
+A fix lands wherever the agent gets the knowledge it was missing:
+
+- **The agent's own instructions** (for example `AGENTS.md`, an agent definition, or its system
+  prompt), when the problem shows up across many tasks: how it should grade itself, when to ask a
+  person, which rules always apply.
+- **A skill** (for example a `SKILL.md`), when the problem is specific to one kind of task.
+- **A troubleshooting guide or other documentation** the agent reads.
+- **A tool, access right or service**, when the agent was blocked rather than uninformed.
+
+The `skill_used` field tells you which task a finding came from. A finding that appears in several
+skills often belongs in the agent's instructions instead.
+
 The protocol suggests a response for each kind of finding:
 
 | Finding | Suggested response |
 | --- | --- |
 | `tsg_gap` pattern | Pull request that adds the missing step to the troubleshooting guide |
 | `improvisation` pattern | Pull request that documents the workaround agents keep inventing, once checked as safe |
-| `skill_gap` pattern | Issue describing the case the skill does not cover |
+| `skill_gap` pattern | Issue describing the case the skill, or the agent's instructions, do not cover |
 | `environment_blockers` pattern | Issue for the team that owns the tool, access or service |
 | `what_was_hard`, `recurring_pattern` | Mention in the regular report; act only if it points at something specific |
-| Skill-health finding | Ask the skill owner to review. A score alone does not say what to change |
+| Skill-health finding | Ask the owner of the skill or agent to review. A score alone does not say what to change |
 
 Keep fixes free of personal data: describe the gap, not the user or customer who hit it, and do not
 copy signal text into a pull request without checking it.
