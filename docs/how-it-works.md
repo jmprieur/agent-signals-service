@@ -23,9 +23,10 @@ flowchart LR
    permanent record; the Kusto database can always be rebuilt from it.
 3. **Load.** Signals are loaded into Azure Data Explorer (Kusto) in small batches. Every signal goes
    into the `SignalsRaw` table; conforming ones also go into typed tables (`Executions`, `Outcomes`,
-   `Escalations`, `Partnerships`). Human-feedback ratings go into `HumanFeedback` from any signal that
-   carries one, conforming or not, because ALAS sends some of them as a signal type the protocol does
-   not define. They appear only in the `human-feedback` report, never in calibration. If loading
+   `Escalations`, `Partnerships`). Human-feedback ratings go into `HumanFeedback` from conforming
+   execution signals, and also from ALAS's standalone human-feedback signals, which are stored as
+   non-conforming because the protocol does not define that signal type. A non-conforming execution
+   contributes no rating. Ratings appear only in the `human-feedback` report, never in calibration. If loading
    fails, an hourly job reloads anything from the last two days that never reached Kusto.
 4. **Report.** Kusto functions in [`schema.kql`](../src/AgentSignals.Api/Kusto/schema.kql) implement
    the protocol's formulas. Every report is capped in days (90) and rows, following the protocol's rule

@@ -47,6 +47,30 @@ reports with the other tools. The tool answers with the same result as HTTP (see
 [Running locally](local-development.md#with-an-agent-through-mcp) shows how to register it in VS Code.
 Submitting through MCP has not been tested yet; reading reports has.
 
+On a deployed service, the MCP client must send a token, like any other caller. In VS Code, the
+workspace's `.vscode/mcp.json` can prompt for one and send it as a header (not yet tested against a
+deployed service):
+
+```json
+{
+  "inputs": [
+    { "type": "promptString", "id": "agent-signals-token", "description": "Agent Signals token", "password": true }
+  ],
+  "servers": {
+    "agent-signals": {
+      "type": "http",
+      "url": "https://<service address>/mcp",
+      "headers": { "Authorization": "Bearer ${input:agent-signals-token}" }
+    }
+  }
+}
+```
+
+Get the token with `az account get-access-token --scope "api://<client id>/Signals.Access" --query accessToken -o tsv`
+(see [Who can send and read signals](access.md#agents-running-in-a-developers-session)). Tokens expire
+after about an hour, and calls then fail with HTTP 401; enter a new token (VS Code may remember the
+previous value, so you may need to clear it first). Never put a token in the file itself.
+
 The agent also needs to know *when* to send and *how* to grade itself. Put that in the agent's own
 instructions (for example `AGENTS.md`), not in each prompt. For example:
 
@@ -171,5 +195,7 @@ fall within the report's window, so a long delay needs a longer window.
 ## Sending escalations
 
 When the agent needs a person to decide or provide something, it sends an escalation with the run's
-`run_id`, a `reason` and a `severity` (`low`, `medium`, `high` or `critical`). Add `blocking: true` if
-work cannot continue. Keep the reason free of private details, as for any signal.
+`run_id`, the same `skill_used` as its execution, a `reason` and a `severity` (`low`, `medium`,
+`high` or `critical`). Add `blocking: true` if work cannot continue. `skill_used` matters: the
+`skill-health` escalation rate counts only escalations that name their skill; sharing the `run_id` is
+not enough. Keep the reason free of private details, as for any signal.

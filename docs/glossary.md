@@ -160,6 +160,7 @@ Sent by a reviewer agent that has read many signals about another agent. See
 | `run_id` | yes | The run the signal is about (a UUID) |
 | `timestamp` | yes | When it happened, ISO 8601 in UTC |
 | `agent_name` | yes | Who sent it |
+| `skill_used` | no | The kind of task. Put it on every signal about a run, not only the execution: the `skill-health` escalation rate counts only escalations that carry it, and does not look it up through `run_id` |
 | `session_id` | no, *extension* | Groups runs from one working session |
 | `labels` | no, *extension* | Free-form context, such as a program or KPI name |
 

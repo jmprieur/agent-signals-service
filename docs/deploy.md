@@ -54,7 +54,7 @@ It creates:
    (client) ID of the `agent-signals` app registration (Microsoft Entra ID, App registrations):
 
    ```powershell
-   ./samples/Send-Signal.ps1 -ApiUrl https://<service address> -ApiClientId <agent-signals client id> -Path ./samples/signals/execution.json
+   ./samples/Send-Signal.ps1 -ApiUrl https://<service address> -ApiClientId <agent-signals client id> -Path ./samples/signals/execution.json -RunId ([guid]::NewGuid()) -Now
    ```
 
 3. **Connect your agents.** See [Sending signals](sending-signals.md).
