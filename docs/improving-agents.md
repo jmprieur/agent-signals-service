@@ -31,7 +31,8 @@ Blue is what this service provides. Amber is yours: the service collects and ana
 does not change your agents. In words:
 
 1. **Your agent reports** after each run: how sure it was, what was hard, what was missing. An
-   evaluator (another agent, a test, a person) grades the same run with an outcome signal.
+   evaluator (another agent, a test, a person) grades the same run with an
+   [outcome signal](#what-an-outcome-is).
 2. **The service stores and analyses** the signals and answers the reports below.
 3. **A reviewer reads the reports** on a schedule. The protocol calls it a *consumer*; it can be an
    agent using the MCP tools, or a person with the HTTP reports or Kusto.
@@ -47,10 +48,30 @@ include a reviewer agent or a pattern registry yet.
 
 ## What an outcome is
 
-An execution signal is the agent marking its own homework. An **outcome signal** is someone else
-marking it: an independent grade of the same run, sent with the same `run_id`. It is what turns the
-agent's confidence from a claim into something you can check. Without outcomes, the `calibration`
-report stays empty and `skill-health` cannot flag overconfidence.
+> **An outcome is an independent grade of the result of one run.** It is sent as a signal of type
+> `outcome`, with the same `run_id` as the execution signal it grades.
+
+Each part of that definition matters:
+
+- **Independent.** It comes from someone or something other than the agent that did the work: a
+  person, another agent, an automated check. The working agent can never send an outcome about its
+  own run.
+- **A grade of the result.** It judges what the run produced (was the answer right, did the change
+  work), not how hard the agent worked or how it went about it.
+- **One run.** It grades a single run, joined by `run_id`. A weekly satisfaction average or a
+  team-level metric is not an outcome, because it cannot be compared with one run's confidence.
+
+An execution signal is the agent marking its own homework; an outcome is someone else marking it.
+Comparing the two is what turns the agent's confidence from a claim into something you can check.
+Without outcomes, the `calibration` report stays empty and `skill-health` cannot flag overconfidence.
+
+What an outcome is **not**:
+
+| Not an outcome | Why | Where it goes instead |
+| --- | --- | --- |
+| The agent's own rating of its work | Not independent | The execution signal's `confidence`, `accuracy`, `completeness` |
+| A person's answer to a question the agent asked during the run | Reported by the agent, inside its own signal | `human_feedback` on the execution signal; shown in the `human-feedback` report, not used for calibration |
+| An aggregate over many runs | Not tied to one run | Your own dashboards, or a query over the outcomes |
 
 An outcome needs one score, `quality_rating`, on the same 1 to 5 scale the agent used for itself:
 how good was the result, judged independently? It can also say how much a person had to fix
@@ -83,7 +104,7 @@ work. Write the mapping down and use it consistently. For example, a team whose 
 requests might choose: merged unchanged 5, merged after small edits 4, merged after substantial
 rework 2, abandoned or rejected 1. Two cautions:
 
-- **Make sure the top grade is reachable.** If your best possible outcome maps to 4, an agent that
+- **Make sure the top grade is reachable.** If the best result your check can observe maps to 4, an agent that
   rightly reports confidence 5 will always look like it over-claims.
 - **Grade the result, not the effort.** A run that took a long detour but produced the right result
   deserves a good `quality_rating`; the detour belongs in the agent's own `what_was_hard`.

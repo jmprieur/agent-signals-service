@@ -3,7 +3,8 @@
 AI agents forget everything between sessions. When an agent finishes a task, the
 [Agent Signals protocol](https://github.com/jennyf19/agentic-devops/tree/main/agent-signals) asks it to
 leave a short, honest report: how confident it was, what was hard, where the documentation fell
-short. A separate evaluator, which can be an agent or a person, later rates the actual result.
+short. A separate evaluator, which can be an agent or a person, later rates the actual result: that
+independent grade of one run is called an *outcome* ([more](docs/improving-agents.md#what-an-outcome-is)).
 
 This repository is a small service you deploy to **your own Azure subscription** to collect those
 signals and turn them into answers:
