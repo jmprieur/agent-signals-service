@@ -46,6 +46,24 @@ The protocol's [Closing the loop](https://github.com/jennyf19/agentic-devops/blo
 document describes the reviewer in full, including a registry of known patterns. This service does not
 include a reviewer agent or a pattern registry yet.
 
+## What the agent says about its own work
+
+After each run, the working agent sends an **execution signal** with its self-assessment. Three
+scores are required, each 1 to 5:
+
+| Score | The agent's answer to |
+| --- | --- |
+| `confidence` | How sure am I that this result is right? |
+| `accuracy` | How correct do I think the work is? |
+| `completeness` | How much of what was asked did I do? |
+
+**Confidence is a prediction.** The agent is guessing how its result will be judged, before anyone
+has judged it. The other two scores describe the work; confidence says how much to rely on that
+description. That is why confidence, and only confidence, is compared with the independent grade.
+
+All three are the agent's own view. None of them is checked until an [outcome](#what-an-outcome-is)
+arrives.
+
 ## What an outcome is
 
 > **An outcome is an independent grade of the result of one run.** It is sent as a signal of type
@@ -74,7 +92,8 @@ What an outcome is **not**:
 | An aggregate over many runs | Not tied to one run | Your own dashboards, or a query over the outcomes |
 
 An outcome needs one score, `quality_rating`, on the same 1 to 5 scale the agent used for itself:
-how good was the result, judged independently? It can also say how much a person had to fix
+how good was the result, judged independently? It is the evaluator's score, never the agent's; it is
+the number the agent's `confidence` is compared with. An outcome can also say how much a person had to fix
 afterwards (`effort_to_merge`: none, minimal, moderate, significant) and list `issues_found`.
 
 ```json
@@ -173,12 +192,17 @@ calibration = 5 - |confidence - quality_rating|
 | 3 | Moderate miscalibration: check which way it misses |
 | 2 or lower | Significant miscalibration: adjust the agent or its instructions |
 
-The report also tells you which way the agent misses:
+The report also tells you which way the agent misses (`mean_delta` is confidence minus the
+independent grade):
 
-- `mean_delta` above zero, or many `overclaimed_runs`: the agent claims more than it delivers. This is
-  the risky direction.
-- `mean_delta` below zero, or many `underclaimed_runs`: the agent is too modest. Usually harmless,
-  but it makes the agent's confidence less useful.
+- **Over-claiming**: `mean_delta` above zero, or many `overclaimed_runs`. The agent says its work is
+  better than it is. This is the risky direction: people trust results they should have checked.
+  `skill-health` flags it.
+- **Under-claiming**: `mean_delta` below zero, or many `underclaimed_runs`. The agent says its work
+  is worse than it is. This is safer, and `skill-health` does not flag it, but it is not more honest.
+  Honest means the confidence *matches* the grade, which is why calibration counts a gap in either
+  direction. Steady under-claiming costs people's time (they re-check or take over work that was
+  fine) and can be a form of hedging. Treat it as a smaller problem, not as a goal.
 
 The `note` column warns about two cases where a good score can mislead:
 
