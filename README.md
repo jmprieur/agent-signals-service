@@ -1,174 +1,109 @@
 # Agent Signals service
 
-AI agents forget everything between sessions. When an agent finishes a task, the
-[Agent Signals protocol](https://github.com/jennyf19/agentic-devops/tree/main/agent-signals) asks it to
-leave a short, honest report: how confident it was, what was hard, where the documentation fell
-short. A separate evaluator, which can be an agent or a person, later rates the actual result.
+A small service you deploy to your own Azure subscription so your AI agents can tell you how their
+work went, and so you can see where they struggle and how far to trust them.
 
-This repository is a small service you deploy to **your own Azure subscription** to collect those
-signals and turn them into answers:
+**An example.** An agent finishes a task and reports: "confidence 4 out of 5; the troubleshooting
+guide had no step for rolling back a multi-module project." Two other agents report the same gap
+that week. The service flags it as a pattern worth fixing. Someone adds the step to the guide, and
+the next runs stop reporting it. When a reviewer, a test or a person also grades the work, the
+service tells you whether each agent's confidence can be trusted.
 
-- **Can we trust what our agents say about their work?** It compares each agent's confidence with the
-  independent rating of the same run (the protocol's *trust equation*).
-- **Which skills are struggling?** It flags low confidence, frequent escalations, falling confidence,
-  and overconfidence, using the protocol's thresholds.
-- **What keeps going wrong?** It surfaces documentation and skill gaps that several runs report.
-- **Did a handoff between sessions survive?** It compares how ready an agent said its handoff was
-  with how easily the next session could pick it up.
+The service implements the [Agent Signals protocol](https://github.com/jennyf19/agentic-devops/tree/main/agent-signals),
+which defines what agents report. It answers four questions:
 
-Agents send signals over HTTP or through an MCP server, which is also how agents read back
-recommendations. It also accepts signals from ALAS, which uses an older format, and converts them
-(see [Accepting ALAS signals](docs/alas-translation.md)).
+- **What keeps going wrong?** Gaps in guides, skills or tools that several runs report.
+- **Which skills are struggling?** Low confidence, frequent requests for help, falling confidence.
+- **Can we trust what our agents say?** Each agent's confidence compared with an independent grade
+  of the same work.
+- **Do handoffs between sessions survive?** How ready a handoff was said to be, compared with how
+  easily the next session picked it up.
+
+**Status: working prototype.** It runs end to end on a developer machine. It has not yet been
+deployed to Azure. [Details](#status).
+
+## Get started
+
+| I want to… | Read |
+| --- | --- |
+| Understand signals in five minutes | [Signals glossary](docs/glossary.md), first two sections |
+| Try it on my machine | [Quick start](#quick-start) below, then [Running locally](docs/local-development.md) |
+| Make my agent send signals | [Sending signals](docs/sending-signals.md) |
+| Deploy it to my Azure subscription | [Deploying](docs/deploy.md) |
+| Read the reports and improve my agents | [Using the reports to improve your agents](docs/improving-agents.md) |
+| Understand what happens inside, and what is stored | [How it works](docs/how-it-works.md) |
+| Connect ALAS agents | [Accepting ALAS signals](docs/alas-translation.md) |
+
+## Quick start
+
+On a machine with the .NET 10 SDK, the Aspire CLI version 17 preview, PowerShell 7, and Docker
+Desktop or Podman running (see [prerequisites](docs/local-development.md#prerequisites)):
+
+```bash
+git clone https://github.com/jmprieur/agent-signals-service
+cd agent-signals-service
+aspire run --apphost src/AgentSignals.AppHost
+```
+
+This starts the service with local stand-ins for Azure storage and Kusto; no Azure account is
+needed. When it is ready (about a minute after the first download), send the protocol's example
+execution and the outcome that grades it as one new run, from another terminal:
+
+```powershell
+$run = [guid]::NewGuid()
+./samples/Send-Signal.ps1 -ApiUrl http://localhost:5280 -Path ./samples/signals/execution.json -Local -RunId $run -Now
+./samples/Send-Signal.ps1 -ApiUrl http://localhost:5280 -Path ./samples/signals/outcome.json -Local -RunId $run -Now
+Invoke-RestMethod "http://localhost:5280/v1/insights/overview?days=1"
+```
+
+Signals reach the reports a few seconds after they are accepted; if the counts are zero, ask again.
+Then let an agent do the same through MCP: see [Running locally](docs/local-development.md#try-it),
+which also covers ARM64 machines and what to do if something does not work.
+
+## How it works, in one picture
+
+```mermaid
+flowchart LR
+    Agent["Your agent"] -->|"signals<br/>(MCP or HTTP)"| API["Agent Signals API"]
+    API --> Store[("Archive and<br/>Kusto database")]
+    Store -->|reports| Reviewer["Reviewer<br/>(agent or person)"]
+    Reviewer -.->|"fix to the agent's instructions,<br/>a skill, a guide or a tool"| Agent
+```
+
+Agents send signals, usually through the service's MCP server, the way they call any other tool.
+The service checks them, keeps every one, and analyses them in Azure Data Explorer (Kusto). Agents
+read reports back through MCP too; scripts, pipelines and people can use plain HTTP. The dotted arrow
+is the point of the whole exercise, and it is yours: someone reads the reports and changes the agent.
+Every Azure resource is declared in code, in [`AppHost.cs`](src/AgentSignals.AppHost/AppHost.cs);
+nothing is created by hand.
+
+**Privacy.** The service rejects signals that contain email addresses or secrets, and never stores
+who called it, only which application did. It cannot catch everything; agents remain responsible for
+what they send. [Details](docs/how-it-works.md#privacy).
 
 ## Status
 
-This is a working prototype, not a hosted product.
-
 | What | State |
 | --- | --- |
-| Receiving, checking, archiving and loading signals | Built; covered by 88 automated tests that use in-memory stand-ins for storage and Kusto |
-| Analysis queries (KQL) | Checked for syntax, unknown columns and type errors with Microsoft's Kusto language analyzer; **not yet run against a Kusto engine** |
+| Receiving, checking, archiving and loading signals | Covered by 88 automated tests, and run end to end on Windows x64 against the local storage and Kusto emulators |
+| Reports (Kusto queries) | All checked with Microsoft's Kusto language analyzer. `overview`, `skill-health` and `patterns` have answered from the Kusto emulator; the others **have not yet run against a Kusto engine** |
 | ALAS conversion | Run over 5,392 real ALAS signals: 96.8% of executions and 98.8% of outcomes conform afterwards ([details](docs/alas-translation.md#results-on-real-alas-signals)) |
-| Azure deployment | Deployment templates generate correctly; **not yet deployed**, and the full app has not been run locally against working emulators or real resources |
-| MCP tools | Built; **not yet exercised by an MCP client** |
+| Azure deployment | Deployment templates generate correctly; **not yet deployed**, so Entra ID sign-in and app roles are untested |
+| MCP tools | An MCP client listed the tools and called a report against a local run. Submitting signals through MCP is not yet tested |
 
 It builds on preview packages: Aspire 17 daily builds, including Aspire's new Entra ID integration.
 Expect to update package versions when Aspire 17 ships.
 
-## How it works
+## Contributing
 
-```mermaid
-flowchart LR
-    Agent["Agent<br/>(HTTP or MCP)"] -->|signal| API["Agent Signals API<br/>(Azure Container Apps)"]
-    API -->|"one file per signal"| Blob[("Blob Storage<br/>archive")]
-    API -->|"small batches"| Kusto[("Azure Data Explorer<br/>typed tables + analysis functions")]
-    Kusto --> API
-    API -->|reports, recommendations| Agent
-```
-
-1. **Check.** Each signal is checked against the protocol's field rules. Signals that contain
-   secrets or email addresses are **rejected and not stored**. Signals that break other rules are
-   stored with a list of issues but are left out of every score, because the protocol asks to
-   capture what happened rather than drop it.
-2. **Archive.** The signal is saved as its own file, named by a hash of its content, so a client
-   that retries gets a "duplicate" answer instead of a second copy. The archive is the permanent
-   record; Kusto can always be rebuilt from it.
-3. **Load.** Signals are loaded into Kusto in small batches. Signals that conform also go into
-   typed tables (`Executions`, `Outcomes`, `Escalations`, `Partnerships`, `HumanFeedback`); every
-   signal goes into `SignalsRaw`. If loading fails, an hourly job reloads anything from the last
-   two days that never reached Kusto.
-4. **Report.** Kusto functions implement the protocol's formulas. Every report is capped in days and
-   rows, following the protocol's rule that agents should read summaries, not the whole history.
-
-All Azure resources are declared in [`AppHost.cs`](src/AgentSignals.AppHost/AppHost.cs): nothing is
-created by hand.
-
-## Reports
-
-`GET /v1/insights/{report}?days=7&top=50&skill=<optional>` (role `Signals.Read`). The same reports
-are available as MCP tools.
-
-| Report | Answers |
-| --- | --- |
-| `overview` | How many signals, runs, agents and skills; how many executions no evaluator has rated yet |
-| `calibration` | Per agent and skill: 5 minus the gap between confidence and `quality_rating`, plus how much confidence varies (agents can game the score by always answering "3") |
-| `model-calibration` | The same, per model that did the work |
-| `skill-health` | Skills with low confidence, more than half of runs escalated, falling confidence, or confidence well above the evaluator's rating |
-| `patterns` | Gaps reported by several runs, against the protocol thresholds (for example, the same documentation gap in 3 runs). Exact wording only |
-| `pattern-evidence` | The raw gap descriptions, for an agent that groups similar wording |
-| `recommendations` | Suggestions from agents that review other agents, those confirmed by evaluator ratings first |
-| `continuation` | Handoff readiness claimed versus recovery rated by the next session |
-| `escalations` | Recent requests for human help |
-| `human-feedback` | Optional human ratings, next to the agent's own confidence for the same runs |
-
-## Run it locally
-
-You need the .NET 10 SDK, the [Aspire CLI](https://aspire.dev) (version 17 preview, matching the
-packages), and a container runtime such as Docker Desktop or Podman. Storage and Kusto run as local
-emulators; no Azure account is needed.
-
-Install the preview CLI with `iex "& { $(irm https://aspire.dev/install.ps1) } -Quality dev"`
-(PowerShell) and check that `aspire --version` starts with `17.`. An older CLI cannot drive this
-AppHost: `aspire run` hangs on "Connecting to apphost…", and `aspire deploy` fails with "The AppHost
-is in publish mode and cannot be started with 'aspire run'".
-
-```bash
-aspire run --apphost src/AgentSignals.AppHost
-```
-
-**No container runtime, or an ARM64 machine?** The Kusto emulator is published for x64 only. You
-can point the local run at a real Kusto database instead, such as Azure Data Explorer's free
-cluster, and at a real storage account if needed. See [Running locally](docs/local-development.md).
-
-Locally the API accepts calls from your machine without a token. Send the protocol's example signal:
-
-```powershell
-./samples/Send-Signal.ps1 -ApiUrl http://localhost:5280 -Path ./samples/signals/execution.json -Local
-```
-
-## Deploy to your subscription
-
-```bash
-aspire deploy --apphost src/AgentSignals.AppHost
-```
-
-Aspire asks for a subscription, resource group and region (a specific region such as `westus2` or
-`australiaeast`, not a geography such as "Australia"), then creates:
-
-| Resource | Purpose |
-| --- | --- |
-| Azure Container Apps environment, container registry, managed identity | Runs the API with no stored secrets |
-| Storage account with a `signals` container | The archive. The API's identity can only read and write blobs |
-| Azure Data Explorer cluster and `signals` database | The queryable store. **Dev/Test size** (one node, no SLA, stops when idle); the main running cost. Change the size in `AppHost.cs` for production use |
-| Entra ID app registration `agent-signals` | Defines who may call the API: app roles `Signals.Write` and `Signals.Read`, and a `Signals.Access` scope pre-authorized for the Azure CLI |
-
-The account that deploys needs permission to create resources in the subscription **and to create app
-registrations** in the subscription's tenant. Some organizations restrict the second; use a tenant
-where you are allowed to.
-
-Deploying also needs a running container runtime (Docker Desktop or Podman), even on a machine that
-cannot run the local emulators: Aspire builds the API's container image locally and pushes it to the
-registry. The image is always built for x64, which is what Container Apps runs, including when you
-deploy from an ARM64 machine.
-
-After deploying, assign the app roles: nobody can send or read signals until you do. See
-[Who can send and read signals](docs/access.md).
-
-```powershell
-./samples/Send-Signal.ps1 -ApiUrl https://<api address> -ApiClientId <agent-signals client id> -Path ./samples/signals/execution.json
-```
-
-If the service cannot be reached, the sample keeps the signal in `.signals/`, the protocol's local
-fallback, so capturing a signal never blocks the developer.
-
-## Privacy
-
-The protocol forbids code, people's names, email addresses, secrets and repository URLs in signals.
-The service enforces part of that at the door:
-
-- **Rejected, not stored:** email addresses, access tokens, GitHub tokens, private keys, cloud access
-  keys and connection-string secrets.
-- **Stored with a warning:** URLs.
-- **Removed:** `pr_url` in ALAS signals.
-- **Never stored:** the caller's personal identity. Only the calling application's ID is kept.
-
-This is a safety net, not a guarantee. Agents remain responsible for what they send.
-
-## Repository layout
-
-| Path | Contents |
-| --- | --- |
-| `src/AgentSignals.Api` | The API: protocol checks, ALAS conversion, archive, Kusto loading, reports, MCP tools |
-| `src/AgentSignals.Api/Kusto/schema.kql` | The analysis functions |
-| `src/AgentSignals.AppHost` | Every Azure resource, for local runs and deployment |
-| `tests/AgentSignals.Tests` | Protocol, conversion, privacy, KQL analysis and endpoint tests |
-| `scripts/Grant-SignalsRole.ps1` | Assigns app roles |
-| `samples/` | Example signals and a sender with local fallback |
+Build and test from the repository root:
 
 ```bash
 dotnet build AgentSignals.slnx
 dotnet test --solution AgentSignals.slnx
 ```
+
+[How it works](docs/how-it-works.md#repository-layout) maps the repository.
 
 ## License
 

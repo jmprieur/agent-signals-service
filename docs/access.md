@@ -1,16 +1,20 @@
 # Who can send and read signals
 
+**In short:** after deploying, nobody can use the service until you give them a role. Give agents and
+pipelines that send signals `Signals.Write`, and people or agents that read reports `Signals.Read`,
+with [`scripts/Grant-SignalsRole.ps1`](#assigning-roles). Running locally needs none of this.
+
 The service accepts only Microsoft Entra ID tokens for its own app registration, `agent-signals`,
 which `aspire deploy` creates. Being able to get a token is not enough: the token must carry one of
 the registration's app roles.
 
 | App role | Allows |
 | --- | --- |
-| `Signals.Write` | `POST /v1/signals` and the MCP `submit_signal` tool |
-| `Signals.Read` | `GET /v1/insights/*` and the MCP report tools |
+| `Signals.Write` | The MCP `submit_signal` tool and `POST /v1/signals` |
+| `Signals.Read` | The MCP report tools and `GET /v1/insights/*` |
 
-Aspire declares these roles but does not assign them. Until you assign a role, every call is
-rejected with HTTP 403.
+Aspire declares these roles but does not assign them. Until you assign a role, calls without a token
+are rejected with HTTP 401, and calls with a valid token but no role with HTTP 403.
 
 ## Agents running in a developer's session
 

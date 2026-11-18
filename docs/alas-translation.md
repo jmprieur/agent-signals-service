@@ -1,9 +1,12 @@
 # Accepting ALAS signals
 
+**In short:** ALAS agents can send their signals to this service unchanged. The service converts them
+to the protocol's format on arrival and keeps the original values, so nothing is lost and every
+conversion can be checked.
+
 ALAS agents already emit signals, but in their own "1.0" format, which predates the
 [Agent Signals protocol](https://github.com/jennyf19/agentic-devops/tree/main/agent-signals).
-This service accepts that format and converts it to protocol 0.1.1 when a signal arrives, so ALAS
-agents can switch to this service without changing what they send.
+This service accepts that format and converts it to protocol 0.1.1 when a signal arrives.
 
 Every converted signal is marked `source_format: "alas/1.0"` and keeps its original values under
 `translation.original`, so anyone can check a conversion and the mapping can be changed later.
