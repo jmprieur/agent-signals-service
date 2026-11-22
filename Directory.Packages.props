@@ -1,6 +1,9 @@
 <Project>
   <PropertyGroup>
-    <AspireVersion>17.0.0-preview.1.26528.12</AspireVersion>
+    <AspireVersion>17.0.0</AspireVersion>
+    <!-- The Entra ID and Kusto hosting integrations have no stable release yet. These previews are
+         built against Aspire 17.0.0. Move them to $(AspireVersion) when they ship as stable. -->
+    <AspirePreviewVersion>17.0.0-preview.1.26567.5</AspirePreviewVersion>
   </PropertyGroup>
   <ItemGroup>
     <!-- Aspire (AppHost and client integrations) -->
@@ -8,8 +11,8 @@
     <PackageVersion Include="Aspire.Hosting.Dotnet" Version="$(AspireVersion)" />
     <PackageVersion Include="Aspire.Hosting.Azure" Version="$(AspireVersion)" />
     <PackageVersion Include="Aspire.Hosting.Azure.AppContainers" Version="$(AspireVersion)" />
-    <PackageVersion Include="Aspire.Hosting.Azure.EntraId" Version="$(AspireVersion)" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Kusto" Version="$(AspireVersion)" />
+    <PackageVersion Include="Aspire.Hosting.Azure.EntraId" Version="$(AspirePreviewVersion)" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Kusto" Version="$(AspirePreviewVersion)" />
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="$(AspireVersion)" />
     <PackageVersion Include="Aspire.Azure.Storage.Blobs" Version="$(AspireVersion)" />
     <!-- Service -->

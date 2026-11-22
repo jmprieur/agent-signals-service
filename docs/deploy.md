@@ -10,7 +10,7 @@ may send and read signals.
 
 | Need | Why |
 | --- | --- |
-| The [local prerequisites](local-development.md#prerequisites): .NET 10 SDK and Aspire CLI 17 preview | To build and deploy |
+| The [local prerequisites](local-development.md#prerequisites): .NET 10 SDK and Aspire CLI 17 | To build and deploy |
 | Docker Desktop or Podman, **running** | Aspire builds the service's container image on your machine and uploads it. Needed even if you never run the emulators. The image is always built for x64, which is what Azure Container Apps runs, also when you deploy from an ARM64 machine |
 | An Azure subscription where you can create resources | For the resources below |
 | Permission to create app registrations in that subscription's Microsoft Entra tenant | The service gets its own app registration. Some organizations restrict this; use a tenant where you are allowed to |
@@ -67,5 +67,5 @@ It creates:
 | --- | --- | --- |
 | `LocationNotAvailableForResourceGroup` | A geography was chosen instead of a region | Deploy again with `--clear-cache` and choose a region such as `australiaeast` |
 | "Docker is not running" or "No container runtime detected" | No container runtime running | Start Docker Desktop or Podman (with `ASPIRE_CONTAINER_RUNTIME=podman`) |
-| "The AppHost is in publish mode and cannot be started with 'aspire run'" | Aspire CLI older than 17 | Install the 17 preview ([prerequisites](local-development.md#prerequisites)) |
+| "The AppHost is in publish mode and cannot be started with 'aspire run'" | Aspire CLI older than 17 | Install Aspire CLI 17 ([prerequisites](local-development.md#prerequisites)) |
 | Failure creating the app registration | Your account cannot create app registrations in this tenant | Use a tenant where you can, or ask an administrator |

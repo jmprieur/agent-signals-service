@@ -9,7 +9,7 @@ without signing in.
 | Need | Check | Notes |
 | --- | --- | --- |
 | .NET 10 SDK | `dotnet --list-sdks` shows `10.0.1xx` or later | |
-| Aspire CLI, version 17 preview | `aspire --version` starts with `17.` | Install: `iex "& { $(irm https://aspire.dev/install.ps1) } -Quality dev"` (PowerShell). An older version cannot run this project; see [Troubleshooting](#troubleshooting) |
+| Aspire CLI, version 17 | `aspire --version` starts with `17.` | Install: `iex "& { $(irm https://aspire.dev/install.ps1) }"` (PowerShell). An older version cannot run this project; see [Troubleshooting](#troubleshooting) |
 | Docker Desktop or Podman, running | `docker info` or `podman info` | Runs the emulators. With Podman, set `ASPIRE_CONTAINER_RUNTIME=podman`. No container runtime, or an ARM64 machine? See [Without the emulators](#without-the-emulators) |
 | PowerShell 7 | `pwsh --version` | Only for the sample scripts; works on Windows, macOS and Linux |
 
@@ -75,7 +75,7 @@ Press Ctrl+C in the `aspire run` window, or run `aspire stop`.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| Build stops with `ASPIRE009` (CLI bundle not found), `aspire run` hangs on "Connecting to apphost…", or `aspire deploy` says "The AppHost is in publish mode" | Aspire CLI older than 17 | Install the 17 preview (see [Prerequisites](#prerequisites)) |
+| Build stops with `ASPIRE009` (CLI bundle not found), `aspire run` hangs on "Connecting to apphost…", or `aspire deploy` says "The AppHost is in publish mode" | Aspire CLI older than 17 | Install Aspire CLI 17 (see [Prerequisites](#prerequisites)) |
 | Restore fails for every package | nuget.org is blocked on your network | [Restoring packages on a restricted network](#restoring-packages-on-a-restricted-network) |
 | "Developer certificates are not trusted" | Local HTTPS certificate not trusted yet | Harmless; `aspire certs trust` removes it |
 | Emulator containers still running after the service stopped | The process was killed instead of stopped | `docker ps`, then `docker stop <id>` for each |
@@ -146,10 +146,8 @@ Use a development account: every signal you send locally is stored there.
 ## Restoring packages on a restricted network
 
 Some networks block nuget.org and provide a package mirror instead. The repository's `NuGet.config`
-uses nuget.org plus the Aspire daily feed (the Aspire 17 preview packages are not on nuget.org yet),
-so on such a network the restore fails. Your mirror may not carry the preview packages either.
-
-Keep a config file **outside the repository** that uses your mirror for everything except Aspire:
+uses nuget.org only, so on such a network the restore fails. Point the restore at your mirror with a
+config file kept **outside the repository**:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -157,12 +155,7 @@ Keep a config file **outside the repository** that uses your mirror for everythi
   <packageSources>
     <clear />
     <add key="mirror" value="https://<your package mirror>/v3/index.json" />
-    <add key="aspire-daily" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json" />
   </packageSources>
-  <packageSourceMapping>
-    <packageSource key="aspire-daily"><package pattern="Aspire.*" /></packageSource>
-    <packageSource key="mirror"><package pattern="*" /></packageSource>
-  </packageSourceMapping>
 </configuration>
 ```
 
@@ -173,6 +166,6 @@ dotnet restore AgentSignals.slnx --configfile <path>\nuget-mirror.config
 dotnet build AgentSignals.slnx --no-restore
 ```
 
-Keep the `packageSourceMapping` section: with two sources and central package management, NuGet
-otherwise stops with error NU1507. If your network also blocks the Aspire daily feed, ask whoever
-runs your mirror to add it as an upstream source.
+A mirror can lag behind nuget.org. If the restore fails with error NU1102 and a "Nearest version"
+older than the one the repository asks for, your mirror does not have that release yet; ask whoever
+runs it to refresh it.

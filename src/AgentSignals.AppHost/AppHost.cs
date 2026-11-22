@@ -72,7 +72,7 @@ if (builder.ExecutionContext.IsPublishMode)
 
     // Agents running in a developer's session sign in with the Azure CLI. Pre-authorizing it only removes
     // the consent prompt: the API still rejects callers without an assigned app role.
-    var azureCli = builder.AddExistingEntraApplication(
+    var azureCli = builder.AddExistingEntraIdApplication(
         "azure-cli",
         tenantId: "f8cdef31-a31e-4b4a-93e4-5f571e91255a", // Azure CLI's home tenant (Microsoft Services)
         clientId: "04b07795-8ddb-461a-bbee-02f9e1bf7b46"); // Azure CLI's well-known application ID
