@@ -36,7 +36,7 @@ deployed to Azure. [Details](#status).
 
 ## Quick start
 
-On a machine with the .NET 10 SDK, the Aspire CLI version 17 preview, PowerShell 7, and Docker
+On a machine with the .NET 10 SDK, the Aspire CLI version 17, PowerShell 7, and Docker
 Desktop or Podman running (see [prerequisites](docs/local-development.md#prerequisites)):
 
 ```bash
@@ -91,8 +91,9 @@ what they send. [Details](docs/how-it-works.md#privacy).
 | Azure deployment | Deployment templates generate correctly; **not yet deployed**, so Entra ID sign-in and app roles are untested |
 | MCP tools | An MCP client listed the tools and called a report against a local run. Submitting signals through MCP is not yet tested |
 
-It builds on preview packages: Aspire 17 daily builds, including Aspire's new Entra ID integration.
-Expect to update package versions when Aspire 17 ships.
+It builds on Aspire 17. Two of the Aspire integrations it uses are still in preview: Entra ID (which
+creates the app registration) and Azure Data Explorer (Kusto). Expect to update them when they ship as
+stable.
 
 ## Contributing
 
